@@ -1,11 +1,12 @@
 require('dotenv').config();
-const express = require('express');
-const axios   = require('axios');
-const path    = require('path');
+const express  = require('express');
+const axios    = require('axios');
+const path     = require('path');
+const cron     = require('node-cron');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
-const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SEC) || 3600) * 1000;
+const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SEC) || 86400) * 1000;
 
 // ── 인메모리 캐시 ─────────────────────────────────────────
 let _cache = null; // { data: [...], ts: Date.now() }
@@ -278,4 +279,20 @@ app.listen(PORT, () => {
   console.log(`\n🏠 청약도우미 서버 시작: http://localhost:${PORT}`);
   console.log(`📡 청약홈 API 키: ${isKeySet() ? '✅ 설정됨' : '❌ 미설정 → .env 파일에 APT_API_KEY 입력 필요'}`);
   console.log(`⏱  캐시 TTL: ${CACHE_TTL_MS / 60000}분\n`);
+
+  // 매일 오전 8시 (KST = UTC+9) → UTC 23시 에 캐시 자동 갱신
+  if (isKeySet()) {
+    cron.schedule('0 23 * * *', async () => {
+      console.log('[스케줄러] 매일 오전 8시 자동 갱신 시작...');
+      _cache = null;
+      try {
+        const data = await fetchFromAPI(process.env.APT_API_KEY);
+        _cache = { data, ts: Date.now() };
+        console.log(`[스케줄러] 갱신 완료: ${data.length}건`);
+      } catch (err) {
+        console.error('[스케줄러] 갱신 실패:', err.message);
+      }
+    }, { timezone: 'UTC' });
+    console.log('📅 자동 갱신 스케줄: 매일 오전 8시 (KST)\n');
+  }
 });
