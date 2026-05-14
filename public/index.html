@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>청약도우미 — AI 청약 자격 분석</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&family=Noto+Serif+KR:wght@600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin="anonymous" onerror="document.getElementById('root').innerHTML='<div style=background:#fff;color:#f06060;padding:24px;font-family:sans-serif>Babel CDN 로드 실패 — 인터넷 연결 확인 후 새로고침(F5)</div>'"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0d0f14;--ink2:#1a1d2a;--ink3:#222638;
+  --line:#28304f;--line2:#38426a;
+  --dust:#e2e6f3;--dust2:#9aa3c2;--dust3:#5a6380;
+  --sky:#4a90f5;--sky2:#6d6af0;
+  --jade:#2ec98c;--ruby:#f06060;--gold:#f0b840;
+  --r:14px;--rS:8px;--rL:20px;
+}
+html,body{height:100%;background:var(--ink);color:var(--dust);font-family:'Noto Sans KR',sans-serif;font-size:16px;line-height:1.6}
+#root{height:100%}
+button{cursor:pointer;border:none;background:none;font-family:inherit;color:inherit}
+input,select,textarea{font-family:inherit;color:var(--dust)}
+a{color:inherit;text-decoration:none}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+@keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.up{animation:up .4s ease both}
+.spin{animation:spin .9s linear infinite}
+
+.card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.card-sm{background:var(--ink2);border:1px solid var(--line);border-radius:var(--rS);padding:12px 14px}
+
+.chip{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600}
+.chip-sky{background:rgba(74,144,245,.15);color:var(--sky);border:1px solid rgba(74,144,245,.3)}
+.chip-jade{background:rgba(46,201,140,.12);color:var(--jade);border:1px solid rgba(46,201,140,.25)}
+.chip-ruby{background:rgba(240,96,96,.12);color:var(--ruby);border:1px solid rgba(240,96,96,.25)}
+.chip-gold{background:rgba(240,184,64,.1);color:var(--gold);border:1px solid rgba(240,184,64,.25)}
+.chip-dust{background:rgba(90,99,128,.2);color:var(--dust2);border:1px solid var(--line)}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;transition:all .15s;cursor:pointer}
+.btn-sky{background:var(--sky);color:#fff}.btn-sky:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.btn-ghost{background:var(--ink3);color:var(--dust2);border:1px solid var(--line)}.btn-ghost:hover{border-color:var(--sky);color:var(--sky)}
+.btn-danger{background:rgba(240,96,96,.12);color:var(--ruby);border:1px solid rgba(240,96,96,.3)}
+.btn-sm{padding:7px 13px;font-size:12px;border-radius:8px}
+
+.fi{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.fl{font-size:12px;font-weight:600;color:var(--dust2);letter-spacing:.3px}
+.inp{background:var(--ink3);border:1px solid var(--line);border-radius:9px;padding:9px 13px;color:var(--dust);font-size:13px;outline:none;transition:border-color .15s;width:100%}
+.inp:focus{border-color:var(--sky)}
+.fh{font-size:11px;color:var(--dust3);line-height:1.5}
+.tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:11px;background:var(--ink3);color:var(--dust2);border:1px solid var(--line)}
+.divider{height:1px;background:var(--line);margin:14px 0}
+.stitle{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--dust3);margin-bottom:10px}
+
+.choice-row{display:flex;gap:7px}
+.choice-btn{flex:1;padding:9px;border-radius:9px;font-size:13px;font-weight:500;background:var(--ink3);border:1px solid var(--line);color:var(--dust2);transition:all .15s;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px}
+.choice-btn.active{background:rgba(74,144,245,.14);border-color:var(--sky);color:var(--sky);font-weight:600}
+</style>
+</head>
+<body>
+<div id="root"><div id="js-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#ffffff;color:#333;font-family:sans-serif;font-size:18px;flex-direction:column;gap:12px"><div style="width:28px;height:28px;border:2px solid #28304f;border-top-color:#4a90f5;border-radius:50%;animation:spin .9s linear infinite"></div>청약도우미 로딩 중…</div></div>
+<script>
+window.onerror=function(msg,src,line,col,err){
+  document.getElementById('root').innerHTML=
+    '<div style="background:#fff;color:#c00;padding:32px;font-family:sans-serif;font-size:14px;line-height:1.8;max-width:600px;margin:40px auto;border-radius:8px;border:1px solid #f88">'
+    +'<strong>오류 발생 — React 렌더링 실패</strong><br><br>'
+    +msg+'<br><small style="color:#888">'+src+' line '+line+'</small></div>';
+};
+</script>
+<script type="text/babel" data-presets="react">
+const {useState,useEffect,useRef,useMemo,useCallback}=React;
+
+/* ═══════════════════════════════════════════════
+   DATA
+═══════════════════════════════════════════════ */
+const SIDO=['서울','경기','인천','부산','대구','광주','대전','울산','세종','강원','충북','충남','전북','전남','경북','경남','제주'];
+const DISTRICTS={
+  '서울':['종로구','중구','용산구','성동구','광진구','동대문구','중랑구','성북구','강북구','도봉구','노원구','은평구','서대문구','마포구','양천구','강서구','구로구','금천구','영등포구','동작구','관악구','서초구','강남구','송파구','강동구'],
+  '경기':['수원시','성남시','용인시','고양시','부천시','안산시','안양시','남양주시','화성시','평택시','의정부시','시흥시','파주시','광명시','김포시','군포시','광주시','이천시','양주시','오산시','구리시','안성시','포천시','의왕시','하남시','여주시','양평군','동두천시','과천시','가평군','연천군'],
+  '인천':['중구','동구','미추홀구','연수구','남동구','부평구','계양구','서구','강화군','옹진군'],
+  '부산':['중구','서구','동구','영도구','부산진구','동래구','남구','북구','해운대구','사하구','금정구','강서구','연제구','수영구','사상구','기장군'],
+  '대구':['중구','동구','서구','남구','북구','수성구','달서구','달성군'],
+  '광주':['동구','서구','남구','북구','광산구'],
+  '대전':['동구','중구','서구','유성구','대덕구'],
+  '울산':['중구','남구','동구','북구','울주군'],
+  '세종':['세종시'],
+  '강원':['춘천시','원주시','강릉시','동해시','태백시','속초시','삼척시','홍천군','횡성군','영월군','평창군','정선군','철원군','화천군','양구군','인제군','고성군','양양군'],
+  '충북':['청주시','충주시','제천시','보은군','옥천군','영동군','증평군','진천군','괴산군','음성군','단양군'],
+  '충남':['천안시','공주시','보령시','아산시','서산시','논산시','계룡시','당진시','금산군','부여군','서천군','청양군','홍성군','예산군','태안군'],
+  '전북':['전주시','군산시','익산시','정읍시','남원시','김제시','완주군','진안군','무주군','장수군','임실군','순창군','고창군','부안군'],
+  '전남':['목포시','여수시','순천시','나주시','광양시','담양군','곡성군','구례군','고흥군','보성군','화순군','장흥군','강진군','해남군','영암군','무안군','함평군','영광군','장성군','완도군','진도군','신안군'],
+  '경북':['포항시','경주시','김천시','안동시','구미시','영주시','영천시','상주시','문경시','경산시','의성군','청송군','영양군','영덕군','청도군','고령군','성주군','칠곡군','예천군','봉화군','울진군','울릉군'],
+  '경남':['창원시','진주시','통영시','사천시','김해시','밀양시','거제시','양산시','의령군','함안군','창녕군','고성군','남해군','하동군','산청군','함양군','거창군','합천군'],
+  '제주':['제주시','서귀포시'],
+};
+const SIDO_FULL={'서울':'서울특별시','경기':'경기도','인천':'인천광역시','부산':'부산광역시','대구':'대구광역시','광주':'광주광역시','대전':'대전광역시','울산':'울산광역시','세종':'세종특별자치시','강원':'강원도','충북':'충청북도','충남':'충청남도','전북':'전라북도','전남':'전라남도','경북':'경상북도','경남':'경상남도','제주':'제주특별자치도'};
+const FULL_SIDO=Object.fromEntries(Object.entries(SIDO_FULL).map(([k,v])=>[v,k]));
+const SIDO_CODE={'서울':'11','부산':'21','대구':'22','인천':'23','광주':'24','대전':'25','울산':'26','세종':'29','경기':'31','강원':'32','충북':'33','충남':'34','전북':'35','전남':'36','경북':'37','경남':'38','제주':'39'};
+const LABEL_SHIFT={'서울':[0,-10],'인천':[-14,2],'대전':[-5,2],'울산':[10,-3],'부산':[8,10]};
+const LEADER_OFFSETS={'경기':[68,-8],'세종':[-50,2]};
+const HOVER_ONLY_DRILL=new Set(['경기']);
+const matchRegion=(sido,sigungu,regions)=>{
+  if(!regions||!regions.length)return true;
+  return regions.some(r=>{const sp=r.indexOf(' ');return sp===-1?sido===r:sido===r.slice(0,sp)&&!!sigungu&&sigungu.includes(r.slice(sp+1));});
+};
+const URBAN_INCOME={1:3482,2:5401,3:7198,4:8248,5:9010,6:9676};
+
+const DUMMY_FALLBACK=[
+  {id:'A001',name:'서울 강동 헤리티지 자이',location:{sido:'서울',sigungu:'강동구',address:'서울시 강동구 천호동 123'},type:'민영',totalUnits:412,buildings:4,maxFloor:35,
+   schedule:{announcement:'2026-04-28',special:'2026-05-12',general:'2026-05-13',winner:'2026-05-22',contract:'2026-06-03',moveIn:'2029-02'},
+   restrictions:{regulated:true,resale:10,reapply:10,residence:3},
+   houseTypes:[{t:'59A',area:59.98,price:89000,units:120},{t:'84A',area:84.93,price:115000,units:150}],
+   eligibility:{incomeFirst:160,incomeYouth:140,asset:330000,ltv:0},
+   payment:{down:10,mid:[{r:10,d:'2026-12'},{r:10,d:'2027-06'},{r:10,d:'2027-12'},{r:10,d:'2028-06'}],bal:50},
+   tags:['규제지역','강동권','브랜드']},
+  {id:'A002',name:'고양 창릉 A11블록 공공분양',location:{sido:'경기',sigungu:'고양시',address:'경기도 고양시 덕양구 창릉동'},type:'공공',totalUnits:798,buildings:8,maxFloor:29,
+   schedule:{announcement:'2026-04-25',special:'2026-05-08',general:'2026-05-09',winner:'2026-05-20',contract:'2026-05-27',moveIn:'2028-09'},
+   restrictions:{regulated:false,resale:8,reapply:5,residence:2},
+   houseTypes:[{t:'46A',area:46.10,price:29500,units:200},{t:'55A',area:55.32,price:35800,units:350},{t:'74A',area:74.88,price:47200,units:248}],
+   eligibility:{incomeFirst:130,incomeYouth:100,asset:215500,ltv:70},
+   payment:{down:10,mid:[{r:20,d:'2026-11'},{r:20,d:'2027-05'},{r:20,d:'2027-11'}],bal:30},
+   tags:['비규제','수도권','공공분양','GTX예정']},
+  {id:'A003',name:'인천 검단 롯데캐슬 넥스티엘',location:{sido:'인천',sigungu:'서구',address:'인천시 서구 검단동 789'},type:'민영',totalUnits:1052,buildings:10,maxFloor:40,
+   schedule:{announcement:'2026-04-22',special:'2026-05-06',general:'2026-05-07',winner:'2026-05-16',contract:'2026-05-23',moveIn:'2028-12'},
+   restrictions:{regulated:false,resale:6,reapply:7,residence:0},
+   houseTypes:[{t:'59A',area:59.60,price:47500,units:300},{t:'84A',area:84.77,price:68000,units:302}],
+   eligibility:{incomeFirst:160,incomeYouth:140,asset:330000,ltv:70},
+   payment:{down:10,mid:[{r:15,d:'2026-11'},{r:15,d:'2027-05'},{r:15,d:'2027-11'},{r:15,d:'2028-05'}],bal:30},
+   tags:['비규제','인천','대단지']},
+  {id:'A004',name:'서울 도봉 방학동 e편한세상',location:{sido:'서울',sigungu:'도봉구',address:'서울시 도봉구 방학동 321'},type:'민영',totalUnits:228,buildings:3,maxFloor:22,
+   schedule:{announcement:'2026-04-20',special:'2026-05-02',general:'2026-05-03',winner:'2026-05-13',contract:'2026-05-20',moveIn:'2028-08'},
+   restrictions:{regulated:false,resale:6,reapply:7,residence:0},
+   houseTypes:[{t:'59A',area:59.21,price:73000,units:100},{t:'84A',area:84.12,price:96000,units:128}],
+   eligibility:{incomeFirst:160,incomeYouth:140,asset:330000,ltv:70},
+   payment:{down:10,mid:[{r:20,d:'2026-11'},{r:20,d:'2027-05'},{r:20,d:'2027-11'}],bal:30},
+   tags:['비규제','서울','소규모']},
+  {id:'A005',name:'수원 광교 힐스테이트 레이크',location:{sido:'경기',sigungu:'수원시',address:'경기도 수원시 영통구 이의동'},type:'민영',totalUnits:560,buildings:6,maxFloor:38,
+   schedule:{announcement:'2026-04-15',special:'2026-04-28',general:'2026-04-29',winner:'2026-05-09',contract:'2026-05-16',moveIn:'2029-05'},
+   restrictions:{regulated:false,resale:8,reapply:7,residence:0},
+   houseTypes:[{t:'84A',area:84.34,price:87000,units:280},{t:'101A',area:101.55,price:109000,units:180}],
+   eligibility:{incomeFirst:160,incomeYouth:140,asset:330000,ltv:70},
+   payment:{down:10,mid:[{r:10,d:'2027-04'},{r:10,d:'2027-10'},{r:10,d:'2028-04'},{r:10,d:'2028-10'},{r:10,d:'2029-02'}],bal:40},
+   tags:['비규제','광교신도시','학군']}
+];
+
+/* ═══════════════════════════════════════════════
+   STORE
+═══════════════════════════════════════════════ */
+const S={
+  getUser:()=>{try{return JSON.parse(localStorage.getItem('cq_u'))}catch{return null}},
+  setUser:d=>localStorage.setItem('cq_u',JSON.stringify(d)),
+  getKey:()=>localStorage.getItem('cq_k')||'',
+  setKey:k=>localStorage.setItem('cq_k',k),
+  getFavs:()=>{try{return JSON.parse(localStorage.getItem('cq_f'))||[]}catch{return[]}},
+  toggleFav:id=>{const f=S.getFavs();const i=f.indexOf(id);i===-1?f.push(id):f.splice(i,1);localStorage.setItem('cq_f',JSON.stringify(f));return f},
+  getAnnCache:()=>{try{const c=JSON.parse(localStorage.getItem('cq_ann'));if(c&&Date.now()-c.ts<3600000)return c;}catch{}return null;},
+  setAnnCache:d=>localStorage.setItem('cq_ann',JSON.stringify({data:d,ts:Date.now()})),
+};
+
+/* ═══════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════ */
+function calcGajeom(u){
+  const hlT=[{y:0,s:0},{y:1,s:2},{y:2,s:4},{y:3,s:6},{y:4,s:8},{y:5,s:10},{y:6,s:12},{y:7,s:14},{y:8,s:16},{y:9,s:18},{y:10,s:20},{y:11,s:22},{y:12,s:24},{y:13,s:26},{y:14,s:28},{y:15,s:30},{y:99,s:32}];
+  const dpT=[{c:0,s:5},{c:1,s:10},{c:2,s:15},{c:3,s:20},{c:4,s:25},{c:5,s:30},{c:99,s:35}];
+  const svT=[{m:6,s:1},{m:12,s:2},{m:24,s:3},{m:36,s:4},{m:48,s:5},{m:60,s:6},{m:72,s:7},{m:84,s:8},{m:96,s:9},{m:108,s:10},{m:120,s:11},{m:132,s:12},{m:144,s:13},{m:156,s:14},{m:168,s:15},{m:9999,s:17}];
+  const yrs=u.homelessYears||0;
+  const hl=[...hlT].reverse().find(r=>yrs>=r.y)?.s||0;
+  const dep=u.dependents||0;
+  const dp=[...dpT].reverse().find(r=>dep>=r.c)?.s||5;
+  const months=(u.savingsYears||0)*12+(u.savingsMonths||0);
+  const sv=[...svT].reverse().find(r=>months>=r.m)?.s||1;
+  return{hl,dp,sv,total:hl+dp+sv};
+}
+function incomeCheck(monthly,fam,pct){
+  const base=URBAN_INCOME[Math.min(fam,6)]||URBAN_INCOME[6];
+  const limit=base*(pct/100);
+  return{ok:monthly<=limit,limit:Math.round(limit),ratio:+(monthly/base*100).toFixed(1)};
+}
+function dday(dateStr){return Math.ceil((new Date(dateStr)-new Date())/86400000)}
+function fmtN(n){return(n||0).toLocaleString()}
+
+/* ═══════════════════════════════════════════════
+   CLAUDE API
+═══════════════════════════════════════════════ */
+async function aiAnalyze(key,user,ann){
+  const g=calcGajeom(user);
+  const fam=1+(user.married?1:0)+(user.dependents||0);
+  const i130=incomeCheck(user.monthlyIncome||0,fam,130);
+  const i160=incomeCheck(user.monthlyIncome||0,fam,160);
+  const prompt=`당신은 대한민국 주택 청약 전문가입니다. 아래 정보를 분석해 순수 JSON만 응답하세요(마크다운 없이).
+
+[사용자]
+나이:만${new Date().getFullYear()-user.birthYear}세 혼인:${user.married?'기혼':'미혼'} 거주:${user.sido}${user.sigungu}
+세대주:${user.isHouseholder?'예':'아니오'} 주택:${user.houseOwnership==='none'?'무주택':user.houseOwnership==='one'?'1주택':'다주택'} 과거소유:${user.hadHouseBefore?'있음':'없음'}
+무주택:${user.homelessYears||0}년 부양가족:${user.dependents||0}명 부모주택:${user.parentHasHouse&&user.parentBirthYear?'있음(만'+(new Date().getFullYear()-user.parentBirthYear-(new Date().getMonth()+1<(user.parentBirthMonth||1)?1:0))+'세)':'없음'}
+월소득:${user.monthlyIncome||0}만(${fam}인) 130%기준${i130.limit}만 160%기준${i160.limit}만
+부동산:${user.realEstateValue||0}만 총자산:${user.totalAsset||0}만 소득세납부:${user.incomeTaxYears||0}년 재직:${user.isWorking?'예':'아니오'}
+통장:${user.savingsYears||0}년${user.savingsMonths||0}개월 납입${user.savingsCount||0}회 공공용${user.savingsTotalAmount||0}만 가용현금:${user.availableCash||0}만
+가점:무주택${g.hl}+부양${g.dp}+통장${g.sv}=합계${g.total}점/84점
+
+[청약]
+${ann.name} ${ann.location.sido}${ann.location.sigungu} ${ann.type}주택
+규제지역:${ann.restrictions.regulated?'예':'아니오'}
+주택형:${ann.houseTypes.map(h=>h.t+'('+h.area+'㎡,'+h.price.toLocaleString()+'만)').join(', ')}
+소득기준:생애최초${ann.eligibility.incomeFirst}%,청년${ann.eligibility.incomeYouth}% 자산:${ann.eligibility.asset.toLocaleString()}만 LTV:${ann.eligibility.ltv}%
+
+응답 형식:
+{"types":[{"name":"민영 일반 가점제","ok":true,"point":"핵심한줄","why":"2문장"},{"name":"민영 일반 추첨제","ok":true,"point":"핵심한줄","why":"2문장"},{"name":"생애최초 특별공급","ok":false,"point":"핵심한줄","why":"2문장"},{"name":"청년 특별공급","ok":false,"point":"핵심한줄","why":"2문장"}],"gajeom":"가점${g.total}점 수준 분석 2문장","pros":["유리한점1","유리한점2"],"cons":["불리한점1"],"warnings":["주의1"],"advice":"종합조언 3문장","loan":{"max":숫자,"monthly":숫자,"note":"1문장"}}`;
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,messages:[{role:'user',content:prompt}]})});
+  if(!r.ok){const e=await r.json();throw new Error(e.error?.message||'API 오류');}
+  const d=await r.json();
+  const txt=d.content[0].text.trim().replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+  return JSON.parse(txt);
+}
+async function aiChat(key,user,ann,history,question){
+  const g=calcGajeom(user);
+  const fam=1+(user.married?1:0)+(user.dependents||0);
+  const sys=`대한민국 주택 청약 전문 AI 도우미입니다. 친근하고 명확하게 답변하세요.
+현재 사용자: ${user.sido}${user.sigungu} 만${new Date().getFullYear()-user.birthYear}세 ${user.married?'기혼':'미혼'} 무주택${user.homelessYears||0}년 가점${g.total}점 월소득${user.monthlyIncome||0}만(${fam}인)
+${ann?'관심 청약: '+ann.name+'('+ann.location.sido+' '+ann.location.sigungu+')':''}
+⚠️ 자격 판단 결과는 항상 참고용임을 안내하고 최종 확인은 청약홈(applyhome.co.kr)에서 하도록 권고하세요.`;
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,system:sys,messages:[...history,{role:'user',content:question}]})});
+  if(!r.ok){const e=await r.json();throw new Error(e.error?.message||'API 오류');}
+  const d=await r.json();
+  return d.content[0].text;
+}
+
+/* ═══════════════════════════════════════════════
+   ICONS
+═══════════════════════════════════════════════ */
+const I=({p,c=16,col='currentColor',s})=>(
+  <svg width={c} height={c} viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={s}>
+    {p.map((d,i)=><path key={i} d={d}/>)}
+  </svg>
+);
+const IHome=p=><I p={["M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z","M9 22V12h6v10"]} {...p}/>;
+const IBell=p=><I p={["M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9","M13.73 21a2 2 0 0 1-3.46 0"]} {...p}/>;
+const IStar=({c=16,fill='none',col='currentColor',style:s})=><svg width={c} height={c} viewBox="0 0 24 24" fill={fill} stroke={col} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={s}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+const IPin=p=><I p={["M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z","M12 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"]} {...p}/>;
+const ICal=p=><I p={["M3 4h18v18H3z","M16 2v4","M8 2v4","M3 10h18"]} {...p}/>;
+const IUser=p=><I p={["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} {...p}/>;
+const ICog=p=><I p={["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z","M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"]} {...p}/>;
+const IKey=p=><I p={["M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"]} {...p}/>;
+const ISpark=p=><I p={["M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"]} {...p}/>;
+const IMsg=p=><I p={["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]} {...p}/>;
+const ISend=p=><I p={["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]} {...p}/>;
+const ICheck=({c=16,col='currentColor',s})=><svg width={c} height={c} viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={s}><polyline points="20 6 9 17 4 12"/></svg>;
+const IX=p=><I p={["M18 6L6 18","M6 6l12 12"]} {...p}/>;
+const IChevR=p=><svg width={p.c||14} height={p.c||14} viewBox="0 0 24 24" fill="none" stroke={p.col||'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={p.style}><polyline points="9 18 15 12 9 6"/></svg>;
+const IChevD=p=><svg width={p.c||14} height={p.c||14} viewBox="0 0 24 24" fill="none" stroke={p.col||'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={p.style}><polyline points="6 9 12 15 18 9"/></svg>;
+const IChevU=p=><svg width={p.c||14} height={p.c||14} viewBox="0 0 24 24" fill="none" stroke={p.col||'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={p.style}><polyline points="18 15 12 9 6 15"/></svg>;
+const ILoader=({c=16,col='currentColor',s})=><svg width={c} height={c} viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="spin" style={s}><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>;
+const ITrend=p=><I p={["M23 6L13.5 15.5 8.5 10.5 1 18","M17 6h6v6"]} {...p}/>;
+const ITrash=p=><I p={["M3 6h18","M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6","M10 11v6","M14 11v6","M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"]} {...p}/>;
+const IEye=p=><I p={["M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z","M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"]} {...p}/>;
+const IEyeOff=p=><I p={["M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24","M1 1l22 22"]} {...p}/>;
+const IWallet=p=><I p={["M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z","M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"]} {...p}/>;
+const IBook=p=><I p={["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]} {...p}/>;
+const ISearch=p=><I p={["M11 17.25a6.25 6.25 0 1 0 0-12.5 6.25 6.25 0 0 0 0 12.5z","M16 16l4.5 4.5"]} {...p}/>;
+const IBldg=p=><I p={["M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z","M9 22V12h6v10","M9 3h6v6H9z"]} {...p}/>;
+const IArrowLeft=p=><I p={["M19 12H5","M12 19l-7-7 7-7"]} {...p}/>;
+
+/* ═══════════════════════════════════════════════
+   API KEY GATE  (최초 진입 시 Claude API 키 입력)
+═══════════════════════════════════════════════ */
+function ApiKeyGate({onComplete}){
+  const [key,setKey]=useState('');
+  const [show,setShow]=useState(false);
+  const [err,setErr]=useState('');
+  const [testing,setTesting]=useState(false);
+
+  const validate=async()=>{
+    const k=key.trim();
+    if(!k){setErr('API 키를 입력해주세요.');return;}
+    if(!k.startsWith('sk-ant-')){setErr('올바른 Claude API 키 형식이 아닙니다. (sk-ant- 로 시작)');return;}
+    setTesting(true);setErr('');
+    try{
+      const r=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:10,messages:[{role:'user',content:'hi'}]})
+      });
+      if(r.status===401){setErr('유효하지 않은 API 키입니다. 키를 다시 확인해주세요.');return;}
+      if(!r.ok){const e=await r.json();setErr(e.error?.message||'API 오류: '+r.status);return;}
+      onComplete(k);
+    }catch(e){
+      setErr('연결 오류: '+e.message);
+    }finally{setTesting(false);}
+  };
+
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:24,background:'var(--ink)'}}>
+      <div style={{width:'100%',maxWidth:460}} className="up">
+        {/* 로고 */}
+        <div style={{textAlign:'center',marginBottom:40}}>
+          <div style={{fontFamily:"'Noto Serif KR',serif",fontSize:30,fontWeight:700,color:'var(--sky)',letterSpacing:'-0.5px',marginBottom:8}}>청약도우미</div>
+          <div style={{color:'var(--dust3)',fontSize:14}}>AI가 내 조건에 맞는 청약을 찾아드립니다</div>
+        </div>
+
+        <div className="card">
+          {/* 안내 헤더 */}
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+            <div style={{width:36,height:36,borderRadius:10,background:'rgba(74,144,245,.12)',border:'1px solid rgba(74,144,245,.25)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <ISpark c={18} col="var(--sky)"/>
+            </div>
+            <div>
+              <div style={{fontWeight:700,fontSize:16}}>Claude API 키 입력</div>
+              <div style={{fontSize:12,color:'var(--dust3)',marginTop:1}}>AI 자격 분석 · 챗봇 Q&A에 사용됩니다</div>
+            </div>
+          </div>
+
+          <div className="divider"/>
+
+          {/* 발급 안내 */}
+          <div style={{padding:'11px 13px',background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.12)',borderRadius:10,marginBottom:18,fontSize:12,color:'var(--dust2)',lineHeight:1.8}}>
+            1. <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:'var(--sky)',fontWeight:600}}>console.anthropic.com</a> 접속<br/>
+            2. <strong style={{color:'var(--dust)'}}>API Keys</strong> 메뉴 → <strong style={{color:'var(--dust)'}}>Create Key</strong> 클릭<br/>
+            3. 생성된 <code style={{background:'var(--ink3)',padding:'1px 5px',borderRadius:4,fontSize:11}}>sk-ant-...</code> 키를 아래에 붙여넣기
+          </div>
+
+          {/* 키 입력 */}
+          <div className="fi" style={{marginBottom:14}}>
+            <label className="fl">Claude API 키</label>
+            <div style={{position:'relative'}}>
+              <input
+                className="inp"
+                type={show?'text':'password'}
+                placeholder="sk-ant-api03-..."
+                value={key}
+                onChange={e=>{setKey(e.target.value);setErr('');}}
+                onKeyDown={e=>e.key==='Enter'&&validate()}
+                style={{paddingRight:42,fontSize:13}}
+                autoFocus
+              />
+              <button onClick={()=>setShow(s=>!s)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'var(--dust3)',padding:4,cursor:'pointer'}}>
+                {show?<IEyeOff c={14}/>:<IEye c={14}/>}
+              </button>
+            </div>
+          </div>
+
+          {/* 오류 메시지 */}
+          {err&&(
+            <div style={{padding:'9px 12px',background:'rgba(240,96,96,.08)',border:'1px solid rgba(240,96,96,.2)',borderRadius:8,fontSize:12,color:'var(--ruby)',marginBottom:14,display:'flex',alignItems:'center',gap:6}}>
+              <IX c={13} col="var(--ruby)"/>{err}
+            </div>
+          )}
+
+          {/* 확인 버튼 */}
+          <button
+            className="btn btn-sky"
+            onClick={validate}
+            disabled={testing}
+            style={{width:'100%',justifyContent:'center',fontSize:14,padding:'12px',opacity:testing?0.7:1}}
+          >
+            {testing
+              ? <><ILoader c={15} col="#fff"/>키 확인 중…</>
+              : <><ICheck c={15} col="#fff"/>확인하고 시작하기</>
+            }
+          </button>
+
+          {/* 면책 */}
+          <div style={{marginTop:14,fontSize:11,color:'var(--dust3)',lineHeight:1.7,textAlign:'center'}}>
+            🔒 키는 이 브라우저에만 저장되며 외부 서버로 전송되지 않습니다<br/>
+            ⚠️ AI 분석 결과는 참고용입니다 — 최종 확인은 <a href="https://applyhome.co.kr" target="_blank" rel="noreferrer" style={{color:'var(--sky)'}}>청약홈</a>에서
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   ONBOARDING
+═══════════════════════════════════════════════ */
+const STEPS=['기본 정보','세대·주택','소득·자산','청약통장','대출 계획','관심 지역'];
+const initForm={birthYear:1995,sido:'서울',sigungu:'강동구',married:false,isHouseholder:true,houseOwnership:'none',hadHouseBefore:false,homelessYears:0,dependents:0,parentHasHouse:false,parentBirthYear:1971,parentBirthMonth:6,monthlyIncome:400,realEstateValue:0,totalAsset:5000,isWorking:true,incomeTaxYears:3,availableCash:5000,savingsYears:3,savingsMonths:0,savingsCount:36,savingsTotalAmount:360,targetLoanAmount:30000,interestRegions:[],interestedInPublic:true};
+
+function CB({label,active,onClick}){return <button className={'choice-btn'+(active?' active':'')} onClick={onClick}>{active&&<ICheck c={11} col="var(--sky)"/>}{label}</button>;}
+
+/* ═══════ REGION MAP ═══════ */
+const _geoData={prov:null,muni:null};
+function filterLargestPoly(f){
+  if(!f||!f.geometry)return null;
+  if(f.geometry.type==='Polygon')return f;
+  if(f.geometry.type==='MultiPolygon'){
+    if(!f.geometry.coordinates.length)return null;
+    let best=f.geometry.coordinates[0],bestA=0;
+    f.geometry.coordinates.forEach(poly=>{
+      if(typeof d3==='undefined')return;
+      const a=d3.geoArea({type:'Feature',geometry:{type:'Polygon',coordinates:poly}});
+      if(a>bestA){bestA=a;best=poly;}
+    });
+    return{...f,geometry:{...f.geometry,coordinates:[best]}};
+  }
+  return f;
+}
+function RegionMap({selected,onToggleDistrict,onToggleAll}){
+  const [drill,setDrill]=useState(null);
+  const [geoP,setGeoP]=useState(null);
+  const [geoM,setGeoM]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [hov,setHov]=useState(null);
+  const [viewMode,setViewMode]=useState('map');
+  const [expSido,setExpSido]=useState({});
+  useEffect(()=>{
+    if(_geoData.prov&&_geoData.muni){setGeoP(_geoData.prov);setGeoM(_geoData.muni);setLoading(false);return;}
+    Promise.all([
+      _geoData.prov?Promise.resolve(_geoData.prov):
+        fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2013/json/skorea_provinces_geo_simple.json')
+          .then(r=>r.json()).then(d=>{_geoData.prov=d;return d;}),
+      _geoData.muni?Promise.resolve(_geoData.muni):
+        fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2013/json/skorea_municipalities_geo_simple.json')
+          .then(r=>r.json()).then(d=>{_geoData.muni=d;return d;})
+    ]).then(([p,m])=>{setGeoP(p);setGeoM(m);setLoading(false);}).catch(()=>setLoading(false));
+  },[]);
+
+  const toggleMode=()=>{setViewMode(m=>m==='map'?'text':'map');setDrill(null);setHov(null);};
+  const ModeBtn=()=>(
+    <button onClick={toggleMode} style={{display:'flex',alignItems:'center',gap:4,fontSize:10,padding:'3px 8px',borderRadius:5,border:'1px solid rgba(100,120,170,.4)',background:'rgba(74,144,245,.1)',color:'#7ab8ff',cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>
+      {viewMode==='map'?'≡ 목록':'🗺 지도'}
+    </button>
+  );
+
+  if(loading)return<div style={{height:280,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--dust3)',fontSize:12,flexDirection:'column',gap:8}}><div style={{width:20,height:20,border:'2px solid var(--line2)',borderTopColor:'var(--sky)',borderRadius:'50%',animation:'spin .9s linear infinite'}}/>지도 데이터 로딩 중…</div>;
+
+  /* ── 텍스트 목록 모드 ── */
+  if(viewMode==='text'){
+    return(
+      <div style={{background:'#1a1f35',borderRadius:12,border:'1px solid rgba(100,120,170,.5)',overflow:'hidden'}}>
+        <div style={{padding:'8px 12px',borderBottom:'1px solid rgba(100,120,170,.3)',display:'flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.2)'}}>
+          <span style={{fontSize:11,fontWeight:700,color:'#b0bde0',flex:1}}>≡ 지역 목록 선택</span>
+          <ModeBtn/>
+        </div>
+        <div style={{maxHeight:380,overflowY:'auto'}}>
+          {SIDO.map(sido=>{
+            const dists=DISTRICTS[sido]||[];
+            const cnt=selected.filter(r=>r.startsWith(sido+' ')).length;
+            const allS=dists.length>0&&cnt===dists.length;
+            const isExp=!!expSido[sido];
+            return(
+              <div key={sido} style={{borderBottom:'1px solid rgba(100,120,170,.13)'}}>
+                <div style={{display:'flex',alignItems:'center',padding:'7px 12px',cursor:'pointer',background:cnt>0?'rgba(74,144,245,.07)':'transparent',gap:6}}
+                  onClick={()=>setExpSido(e=>({...e,[sido]:!e[sido]}))}>
+                  <span style={{fontSize:9,color:'#5a6b8a',width:10,flexShrink:0}}>{isExp?'▼':'▶'}</span>
+                  <span style={{fontSize:12,fontWeight:600,color:cnt>0?'#7ab8ff':'#b0bde0',flex:1}}>{sido}</span>
+                  {cnt>0&&<span style={{fontSize:10,color:'#7ab8ff',fontWeight:700,marginRight:4}}>{cnt}/{dists.length}</span>}
+                  <button onClick={e=>{e.stopPropagation();onToggleAll(sido);}} style={{fontSize:10,padding:'2px 7px',borderRadius:4,border:`1px solid ${allS?'rgba(74,144,245,.5)':'rgba(100,120,170,.4)'}`,background:allS?'rgba(74,144,245,.2)':'transparent',color:allS?'#7ab8ff':'#6a7799',cursor:'pointer',flexShrink:0}}>
+                    {allS?'해제':'전체'}
+                  </button>
+                </div>
+                {isExp&&(
+                  <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 12px',background:'rgba(0,0,0,.2)'}}>
+                    {dists.map(d=>{
+                      const sel=selected.includes(sido+' '+d);
+                      return(
+                        <button key={d} onClick={()=>onToggleDistrict(sido,d)}
+                          style={{fontSize:10,padding:'3px 8px',borderRadius:999,cursor:'pointer',
+                            border:`1px solid ${sel?'rgba(74,144,245,.6)':'rgba(100,120,170,.35)'}`,
+                            background:sel?'rgba(74,144,245,.25)':'transparent',
+                            color:sel?'#7ab8ff':'#8a9ab8',fontWeight:sel?700:400}}>
+                          {sel?'✓ ':''}{d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{padding:'5px 12px',background:'rgba(0,0,0,.25)',fontSize:10,color:selected.length>0?'#7ab8ff':'#5a6b8a',fontWeight:selected.length>0?600:400}}>
+          {selected.length>0?`✓ 총 ${selected.length}개 지역 선택됨`:'시/도를 클릭해 펼치세요'}
+        </div>
+      </div>
+    );
+  }
+
+  /* ── 지도 모드: GeoJSON 필요 ── */
+  if(!geoP||!geoM||typeof d3==='undefined')return<div style={{padding:16,color:'var(--dust3)',fontSize:12,textAlign:'center'}}>지도를 불러올 수 없습니다 — 인터넷 연결을 확인하세요</div>;
+
+  /* ── 전국 뷰 ── */
+  if(!drill){
+    const W=320,H=470,PAD=6;
+    const proj=d3.geoMercator().fitSize([W-PAD*2,H-PAD*2],geoP);
+    const pg=d3.geoPath().projection(proj);
+    return(
+      <div style={{background:'#1a1f35',borderRadius:12,border:'1px solid rgba(100,120,170,.5)',overflow:'hidden'}}>
+        <div style={{padding:'8px 12px',borderBottom:'1px solid rgba(100,120,170,.3)',display:'flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.2)'}}>
+          <span style={{fontSize:11,fontWeight:700,color:'#b0bde0',flex:1}}>🗺 대한민국</span>
+          <span style={{fontSize:10,color:'#6a7799'}}>시/도 클릭 → 구/시/군 선택</span>
+          <ModeBtn/>
+        </div>
+        {hov&&<div style={{padding:'4px 12px',background:'rgba(74,144,245,.12)',borderBottom:'1px solid rgba(74,144,245,.2)',fontSize:11,color:'#7ab8ff',fontWeight:600}}>{hov} {selected.filter(r=>r.startsWith(hov+' ')).length>0?`· ${selected.filter(r=>r.startsWith(hov+' ')).length}개 선택`:''}</div>}
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          <rect x={0} y={0} width={W} height={H} fill="#1a1f35"/>
+          <g transform={`translate(${PAD},${PAD})`}>
+            {geoP.features.map(f=>{
+              const full=f.properties.name||'';
+              const sido=FULL_SIDO[full];
+              if(!sido)return null;
+              const ff=filterLargestPoly(f);
+              if(!ff)return null;
+              const cnt=selected.filter(r=>r.startsWith(sido+' ')).length;
+              const dList=DISTRICTS[sido]||[];
+              const allSel=dList.length>0&&cnt===dList.length;
+              const hasSel=cnt>0;
+              const isHov=hov===sido;
+              const d=pg(ff);
+              if(!d)return null;
+              const [cx,cy]=pg.centroid(ff);
+              const ldr=LEADER_OFFSETS[sido];
+              const [ox,oy]=ldr||LABEL_SHIFT[sido]||[0,0];
+              const tx=cx+ox,ty=cy+oy;
+              return(
+                <g key={sido} style={{cursor:'pointer'}}
+                  onClick={()=>{if(dList.length<=1){if(dList[0])onToggleDistrict(sido,dList[0]);}else setDrill(sido);}}
+                  onMouseEnter={()=>setHov(sido)} onMouseLeave={()=>setHov(null)}>
+                  <path d={d}
+                    fill={allSel?'#3d7ed4':hasSel?'#2d5fa0':isHov?'#253560':'#1e2748'}
+                    stroke={'rgba(140,170,230,.55)'}
+                    strokeWidth={1.5}
+                    style={{transition:'fill .15s'}}
+                  />
+                  {!isNaN(cx)&&!isNaN(cy)&&(<>
+                    {ldr&&<>
+                      <circle cx={cx} cy={cy} r={2.5} fill={hasSel?'#7ab8ff':'#4a6090'} pointerEvents="none"/>
+                      <line x1={cx} y1={cy} x2={tx} y2={ty} stroke={hasSel?'rgba(120,184,255,.45)':'rgba(74,96,144,.45)'} strokeWidth={0.8} strokeDasharray="2,2" pointerEvents="none"/>
+                    </>}
+                    <text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle"
+                      fill={hasSel?'#e0eeff':isHov?'#b8ceee':'#7a8fb8'}
+                      stroke="#1a1f35" strokeWidth={2.5} paintOrder="stroke"
+                      fontSize={9} fontWeight={hasSel?700:500} pointerEvents="none">
+                      {sido}{cnt>0?`(${cnt})`:''}
+                    </text>
+                  </>)}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+        <div style={{padding:'5px 12px',background:'rgba(0,0,0,.25)',fontSize:10,color:selected.length>0?'#7ab8ff':'#5a6b8a',fontWeight:selected.length>0?600:400}}>
+          {selected.length>0?`✓ 총 ${selected.length}개 지역 선택됨`:'지역을 클릭하세요'}
+        </div>
+      </div>
+    );
+  }
+
+  /* ── 드릴다운 뷰 ── */
+  const dists=DISTRICTS[drill]||[];
+  const sidoCode=SIDO_CODE[drill]||'';
+  const feats=geoM.features.filter(f=>{
+    const n=f.properties.name;
+    const c=f.properties.code||'';
+    return sidoCode?c.startsWith(sidoCode)&&dists.some(d=>n===d||n.startsWith(d)):dists.some(d=>n===d||n.startsWith(d));
+  });
+  const drillCnt=selected.filter(r=>r.startsWith(drill+' ')).length;
+  const drillAll=drillCnt===dists.length&&dists.length>0;
+  const W2=480,H2=360,PAD2=10;
+  const proj2=feats.length?d3.geoMercator().fitSize([W2-PAD2*2,H2-PAD2*2],{type:'FeatureCollection',features:feats}):null;
+  const pg2=proj2?d3.geoPath().projection(proj2):null;
+  const fSize=Math.max(7,Math.min(11,Math.round(190/Math.sqrt(feats.length+1))));
+  const hoverOnly=HOVER_ONLY_DRILL.has(drill);
+  return(
+    <div style={{background:'#1a1f35',borderRadius:12,border:'1px solid rgba(100,120,170,.5)',overflow:'hidden'}}>
+      <div style={{padding:'7px 12px',borderBottom:'1px solid rgba(100,120,170,.3)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',background:'rgba(0,0,0,.2)'}}>
+        <button onClick={()=>{setDrill(null);setHov(null);}} style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'#7ab8ff',cursor:'pointer',padding:'2px 8px',borderRadius:5,border:'1px solid rgba(74,144,245,.35)',background:'rgba(74,144,245,.1)'}}>← 전국</button>
+        <span style={{fontWeight:700,fontSize:12,color:'#7ab8ff'}}>{drill}</span>
+        {hoverOnly&&<span style={{fontSize:9,color:'#5a6b8a'}}>마우스오버로 지역명 확인</span>}
+        <button onClick={()=>onToggleAll(drill)} style={{fontSize:11,padding:'2px 8px',borderRadius:5,border:'1px solid rgba(100,120,170,.4)',background:drillAll?'rgba(74,144,245,.2)':'transparent',color:drillAll?'#7ab8ff':'#6a7799',cursor:'pointer',fontWeight:drillAll?700:400,marginLeft:'auto'}}>{drillAll?'전체 해제':'전체 선택'}</button>
+        <span style={{fontSize:10,color:'#6a7799'}}>{drillCnt}/{dists.length}</span>
+        <ModeBtn/>
+      </div>
+      {hov&&<div style={{padding:'4px 12px',background:'rgba(74,144,245,.12)',borderBottom:'1px solid rgba(74,144,245,.2)',fontSize:11,color:'#7ab8ff',fontWeight:600}}>{drill} {hov}</div>}
+      {pg2&&feats.length?(
+        <svg viewBox={`0 0 ${W2} ${H2}`} style={{width:'100%',height:'auto',display:'block'}}>
+          <rect x={0} y={0} width={W2} height={H2} fill="#1a1f35"/>
+          <g transform={`translate(${PAD2},${PAD2})`}>
+            {feats.map(f=>{
+              const name=f.properties.name;
+              const reg=drill+' '+name;
+              const sel=selected.includes(reg);
+              const isHov=hov===name;
+              const d=pg2(f);
+              if(!d)return null;
+              const [cx,cy]=pg2.centroid(f);
+              return(
+                <g key={name}>
+                  <path d={d}
+                    fill={sel?'#3a7ed6':isHov?'#2a5898':'#1e2d5a'}
+                    stroke={'rgba(170,200,255,.5)'}
+                    strokeWidth={1.5}
+                    style={{cursor:'pointer',transition:'fill .15s'}}
+                    onMouseEnter={()=>setHov(name)} onMouseLeave={()=>setHov(null)}
+                    onClick={()=>onToggleDistrict(drill,name)}
+                  />
+                  {(!hoverOnly||isHov)&&!isNaN(cx)&&!isNaN(cy)&&(
+                    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                      fill={sel?'#e4f0ff':isHov?'#c0d8f8':'#7a9acc'}
+                      stroke="#1a1f35" strokeWidth={2} paintOrder="stroke"
+                      fontSize={fSize} fontWeight={sel?700:500} pointerEvents="none">
+                      {name}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      ):(
+        <div style={{padding:24,textAlign:'center',color:'#5a6b8a',fontSize:11}}>이 지역 지도 데이터가 없습니다</div>
+      )}
+      <div style={{padding:'5px 12px',background:'rgba(0,0,0,.25)',display:'flex',gap:12,fontSize:10}}>
+        <span style={{color:'#5a6b8a'}}>클릭: 선택/해제</span>
+        <span style={{color:'#7ab8ff',fontWeight:600}}>{drillCnt}개 선택</span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ LOAN CALCULATOR ═══════ */
+function LoanCalc({targetLoanAmount,onSetTarget}){
+  const [amt,setAmt]=useState(30000);
+  const [rate,setRate]=useState(3.8);
+  const [term,setTerm]=useState(30);
+  const [method,setMethod]=useState('equal');
+  const r=rate/100/12,n=term*12,P=amt*10000;
+  let monthly,totalInt;
+  if(method==='equal'){monthly=r?P*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1):P/n;totalInt=monthly*n-P;}
+  else if(method==='principal'){monthly=P/n+P*r;totalInt=r*P*(n+1)/2;}
+  else{monthly=P*r;totalInt=monthly*n;}
+  const fmtM=v=>(Math.round(v/10000)).toLocaleString()+'만원';
+  const HELP={
+    equal:'원리금균등 — 매달 납입액이 동일합니다. 초기에는 이자 비중이 높고 후반에 원금 비중이 높아집니다. 관리가 쉬운 가장 일반적인 방식.',
+    principal:'원금균등 — 매달 원금 상환액이 동일하고 이자는 점차 줄어듭니다. 초기 납입액이 가장 많지만 총 이자 부담이 가장 적습니다.',
+    bullet:'만기일시 — 대출 기간 동안 이자만 납부하고 만기에 원금 전액을 일시 상환합니다. 월 부담이 적지만 만기에 큰 목돈이 필요합니다.'
+  };
+  return(
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:12}}>
+        <div className="fi" style={{margin:0}}><label className="fl">대출 금액</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} value={amt} onChange={e=>setAmt(+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)',flexShrink:0}}>만원</span></div></div>
+        <div className="fi" style={{margin:0}}><label className="fl">연 금리</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" step="0.1" min={0} max={30} value={rate} onChange={e=>setRate(+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)',flexShrink:0}}>%</span></div></div>
+        <div className="fi" style={{margin:0}}><label className="fl">대출 기간</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={1} max={50} value={term} onChange={e=>setTerm(+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)',flexShrink:0}}>년</span></div></div>
+      </div>
+      <div className="fi" style={{margin:0,marginBottom:12}}>
+        <label className="fl">상환 방식</label>
+        <div className="choice-row"><CB label="원리금균등" active={method==='equal'} onClick={()=>setMethod('equal')}/><CB label="원금균등" active={method==='principal'} onClick={()=>setMethod('principal')}/><CB label="만기일시" active={method==='bullet'} onClick={()=>setMethod('bullet')}/></div>
+        <div style={{marginTop:7,padding:'8px 11px',background:'var(--ink3)',borderRadius:8,border:'1px solid var(--line)',fontSize:11,color:'var(--dust2)',lineHeight:1.7}}>{HELP[method]}</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,padding:14,background:'var(--ink3)',borderRadius:10,border:'1px solid var(--line)',marginBottom:18}}>
+        <div><div style={{fontSize:10,color:'var(--dust3)',marginBottom:5}}>{method==='principal'?'첫달 납입액':method==='bullet'?'월 이자':'월 납입액'}</div><div style={{fontSize:19,fontWeight:800,color:'var(--sky)'}}>{fmtM(monthly)}</div></div>
+        <div><div style={{fontSize:10,color:'var(--dust3)',marginBottom:5}}>총 이자</div><div style={{fontSize:19,fontWeight:800,color:'var(--gold)'}}>{fmtM(totalInt)}</div></div>
+        <div><div style={{fontSize:10,color:'var(--dust3)',marginBottom:5}}>총 상환액</div><div style={{fontSize:19,fontWeight:800,color:'var(--dust)'}}>{fmtM(P+totalInt)}</div></div>
+      </div>
+      <div style={{padding:'12px 14px',background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.15)',borderRadius:10}}>
+        <label className="fl">목표 대출 금액 상한 <span style={{fontWeight:400,color:'var(--dust3)'}}>(대출로 조달 가능한 최대 금액)</span></label>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginTop:8}}><input className="inp" type="number" min={0} value={targetLoanAmount} onChange={e=>onSetTarget(+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)',flexShrink:0}}>만원</span></div>
+        <span className="fh">가용 현금 + 목표 대출 금액 = 실질 구매력 상한으로 AI 자격 분석에 활용됩니다</span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ MINI CALENDAR ═══════ */
+function MiniCalendar({announcements,setPage,setDid}){
+  const today=new Date();
+  const [yr,setYr]=useState(today.getFullYear());
+  const [mo,setMo]=useState(today.getMonth());
+  const events={};
+  announcements.forEach(a=>{
+    const add=(date,type)=>{if(!date)return;const k=date.slice(0,10);if(!events[k])events[k]=[];events[k].push({type,name:a.name,id:a.id});};
+    add(a.schedule.special,'특공');add(a.schedule.general,'청약');add(a.schedule.winner,'당첨');add(a.schedule.contract,'계약');add(a.schedule.moveIn,'입주');
+  });
+  const firstDow=new Date(yr,mo,1).getDay(),dim=new Date(yr,mo+1,0).getDate();
+  const todayStr=today.toISOString().slice(0,10);
+  const prevMo=()=>{if(mo===0){setMo(11);setYr(y=>y-1);}else setMo(m=>m-1);};
+  const nextMo=()=>{if(mo===11){setMo(0);setYr(y=>y+1);}else setMo(m=>m+1);};
+  const MONS=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  const TC={특공:'var(--sky)',청약:'var(--jade)',당첨:'var(--ruby)',계약:'var(--gold)',입주:'var(--dust2)'};
+  const TB={특공:'rgba(74,144,245,.22)',청약:'rgba(46,201,140,.22)',당첨:'rgba(240,96,96,.2)',계약:'rgba(240,184,64,.2)',입주:'rgba(90,99,128,.2)'};
+  const cells=[];
+  for(let i=0;i<firstDow;i++)cells.push(null);
+  for(let d=1;d<=dim;d++)cells.push(d);
+  return(
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+        <button onClick={prevMo} style={{padding:'3px 9px',borderRadius:6,background:'var(--ink3)',border:'1px solid var(--line)',color:'var(--dust2)',cursor:'pointer',fontSize:14,lineHeight:1}}>‹</button>
+        <span style={{fontWeight:700,fontSize:13}}>{yr}년 {MONS[mo]}</span>
+        <button onClick={nextMo} style={{padding:'3px 9px',borderRadius:6,background:'var(--ink3)',border:'1px solid var(--line)',color:'var(--dust2)',cursor:'pointer',fontSize:14,lineHeight:1}}>›</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+        {['일','월','화','수','목','금','토'].map((d,i)=>(
+          <div key={d} style={{textAlign:'center',fontSize:9,color:i===0?'var(--ruby)':i===6?'var(--sky)':'var(--dust3)',padding:'3px 0',fontWeight:600}}>{d}</div>
+        ))}
+        {cells.map((day,i)=>{
+          if(!day)return<div key={'e'+i}/>;
+          const ds=`${yr}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+          const evs=events[ds]||[];
+          const isToday=ds===todayStr;
+          return(
+            <div key={ds} style={{minHeight:40,padding:'2px 2px',borderRadius:6,background:isToday?'rgba(74,144,245,.1)':'transparent',border:`1px solid ${isToday?'rgba(74,144,245,.35)':'transparent'}`}}>
+              <div style={{fontSize:10,color:isToday?'var(--sky)':'var(--dust2)',textAlign:'right',marginBottom:1,fontWeight:isToday?700:400}}>{day}</div>
+              {evs.slice(0,2).map((ev,j)=>(
+                <div key={j} onClick={()=>{setDid(ev.id);setPage('detail');}} title={ev.name+' — '+ev.type}
+                  style={{fontSize:8,borderRadius:3,padding:'1px 3px',marginBottom:1,cursor:'pointer',background:TB[ev.type],color:TC[ev.type],overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {ev.type}
+                </div>
+              ))}
+              {evs.length>2&&<div style={{fontSize:7,color:'var(--dust3)',textAlign:'center'}}>+{evs.length-2}</div>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:'flex',gap:10,marginTop:8,flexWrap:'wrap'}}>
+        {Object.entries(TC).map(([t,c])=>(
+          <span key={t} style={{fontSize:9,color:c,display:'flex',alignItems:'center',gap:3}}>
+            <span style={{width:7,height:7,borderRadius:2,background:TB[t],border:`1px solid ${c}`,display:'inline-block'}}/>
+            {t}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Onboarding({onComplete}){
+  const [step,setStep]=useState(0);
+  const [form,setForm]=useState(initForm);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const age=new Date().getFullYear()-form.birthYear;
+  const now=new Date();
+  const parentManAge=form.parentBirthYear?(now.getFullYear()-form.parentBirthYear-(now.getMonth()+1<(form.parentBirthMonth||1)?1:0)):0;
+  const sidoCnt=s=>form.interestRegions.filter(r=>r.startsWith(s+' ')).length;
+  const toggleDistrict=(s,d)=>{const r=s+' '+d;set('interestRegions',form.interestRegions.includes(r)?form.interestRegions.filter(x=>x!==r):[...form.interestRegions,r]);};
+  const clearSido=s=>set('interestRegions',form.interestRegions.filter(r=>!r.startsWith(s+' ')));
+  const allSel=s=>(DISTRICTS[s]||[]).every(d=>form.interestRegions.includes(s+' '+d));
+  const toggleAll=s=>{if(allSel(s)){clearSido(s);}else{const toAdd=(DISTRICTS[s]||[]).map(d=>s+' '+d).filter(r=>!form.interestRegions.includes(r));set('interestRegions',[...form.interestRegions,...toAdd]);}}
+
+  const screens=[
+    <div key="s0" className="up">
+      <p style={{fontSize:20,fontWeight:700,marginBottom:4}}>기본 정보를 입력해주세요</p>
+      <p style={{color:'var(--dust2)',fontSize:13,marginBottom:22,lineHeight:1.6}}>청약 자격 판단에 쓰이는 기본 항목들입니다.</p>
+      <div className="fi"><label className="fl">출생연도</label><input className="inp" type="number" min={1950} max={2007} value={form.birthYear} onChange={e=>set('birthYear',+e.target.value)}/><span className="fh">만 {age}세 · 청년 특공 기준(19~39세): {age>=19&&age<=39?'✅ 해당':'❌ 미해당'}</span></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div className="fi"><label className="fl">거주 시/도</label><select className="inp" value={form.sido} onChange={e=>{const s=e.target.value;const sorted=[...(DISTRICTS[s]||[])].sort((a,b)=>a.localeCompare(b,'ko'));set('sido',s);set('sigungu',sorted[0]||'');}}>{SIDO.map(s=><option key={s}>{s}</option>)}</select></div>
+        <div className="fi"><label className="fl">시/군/구</label><select className="inp" value={form.sigungu} onChange={e=>set('sigungu',e.target.value)}>{[...(DISTRICTS[form.sido]||[])].sort((a,b)=>a.localeCompare(b,'ko')).map(d=><option key={d}>{d}</option>)}</select></div>
+      </div>
+      <div className="fi"><label className="fl">혼인 여부</label><div className="choice-row"><CB label="미혼" active={!form.married} onClick={()=>set('married',false)}/><CB label="기혼" active={form.married} onClick={()=>set('married',true)}/></div></div>
+    </div>,
+
+    <div key="s1" className="up">
+      <p style={{fontSize:20,fontWeight:700,marginBottom:4}}>세대 및 주택 현황</p>
+      <p style={{color:'var(--dust2)',fontSize:13,marginBottom:22}}>무주택 기간·부양가족 가점과 특공 자격 판단에 사용됩니다.</p>
+
+      <div className="fi"><label className="fl">세대주 여부</label><div className="choice-row"><CB label="세대주" active={form.isHouseholder} onClick={()=>set('isHouseholder',true)}/><CB label="세대원" active={!form.isHouseholder} onClick={()=>set('isHouseholder',false)}/></div></div>
+
+      <div className="fi">
+        <label className="fl">현재 주택 소유</label>
+        <div className="choice-row"><CB label="무주택" active={form.houseOwnership==='none'} onClick={()=>set('houseOwnership','none')}/><CB label="1주택" active={form.houseOwnership==='one'} onClick={()=>set('houseOwnership','one')}/><CB label="다주택" active={form.houseOwnership==='multi'} onClick={()=>set('houseOwnership','multi')}/></div>
+        <span className="fh">세대 기준으로 판단 — 세대원 중 누구라도 주택을 소유하면 유주택 세대로 간주됩니다 (주택공급에 관한 규칙 제2조)</span>
+        {form.houseOwnership!=='none'&&(
+          <div style={{marginTop:10,padding:'10px 12px',background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.15)',borderRadius:8}}>
+            <div style={{fontSize:11,fontWeight:600,color:'var(--sky)',marginBottom:8}}>동거 부모(직계존속)가 세대주이고 해당 주택을 소유하고 있나요?</div>
+            <div style={{fontSize:11,color:'var(--dust3)',marginBottom:10,lineHeight:1.6}}>만 60세 이상 직계존속 소유 주택은 세대 주택 수에서 제외됩니다 (주택공급에 관한 규칙 제2조 단서)</div>
+            <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+              <span style={{fontSize:11,color:'var(--dust2)'}}>부모 생년월일:</span>
+              <input className="inp" type="number" min={1930} max={2000} placeholder="출생연도" value={form.parentBirthYear||''} onChange={e=>set('parentBirthYear',+e.target.value)} style={{width:90,fontSize:12}}/>
+              <span style={{fontSize:11,color:'var(--dust2)'}}>년</span>
+              <select className="inp" value={form.parentBirthMonth||1} onChange={e=>set('parentBirthMonth',+e.target.value)} style={{width:70,fontSize:12}}>
+                {[1,2,3,4,5,6,7,8,9,10,11,12].map(m=><option key={m} value={m}>{m}월</option>)}
+              </select>
+              {form.parentBirthYear&&<span style={{fontSize:11,fontWeight:700,color:parentManAge>=60?'var(--jade)':'var(--ruby)'}}>
+                {parentManAge>=60?`✅ 만 ${parentManAge}세 — 부모 주택 세대 수 제외 가능`:`❌ 만 ${parentManAge}세 — 미충족 (만 60세 미만)`}
+              </span>}
+            </div>
+            {parentManAge>=60&&<div style={{marginTop:8,padding:'7px 10px',background:'rgba(240,184,64,.1)',border:'1px solid rgba(240,184,64,.35)',borderRadius:7,display:'flex',gap:5,alignItems:'flex-start'}}>
+              <span style={{fontSize:13,flexShrink:0}}>⚠️</span>
+              <span style={{fontSize:11,color:'var(--gold)',lineHeight:1.6,fontWeight:500}}><strong>조건부 적용</strong> — 이 예외는 청약 공고마다 적용 여부가 다릅니다. 개별 공고 규정을 반드시 확인하세요.</span>
+            </div>}
+          </div>
+        )}
+      </div>
+
+      <div className="fi">
+        <label className="fl">과거 주택 소유 이력</label>
+        <div className="choice-row"><CB label="없음" active={!form.hadHouseBefore} onClick={()=>set('hadHouseBefore',false)}/><CB label="있음" active={form.hadHouseBefore} onClick={()=>set('hadHouseBefore',true)}/></div>
+        <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
+          {form.hadHouseBefore&&parentManAge>=60
+            ?<><span className="chip chip-gold">⚠️ 생애최초 특공 조건부 가능</span><span className="chip chip-gold">⚠️ 청년 특공 조건부 가능</span></>
+            :<><span className={`chip chip-${!form.hadHouseBefore?'jade':'ruby'}`}>{!form.hadHouseBefore?'✅':'❌'} 생애최초 특공 {!form.hadHouseBefore?'신청 가능':'신청 불가'}</span><span className={`chip chip-${!form.hadHouseBefore?'jade':'ruby'}`}>{!form.hadHouseBefore?'✅':'❌'} 청년 특공 {!form.hadHouseBefore?'신청 가능':'신청 불가'}</span></>
+          }
+        </div>
+        {form.hadHouseBefore&&<div className="fh" style={{marginTop:6,lineHeight:1.7}}>
+          {parentManAge>=60
+            ?<><span style={{fontWeight:700,color:'var(--gold)'}}>⚠️ 조건부 적용 가능</span> — 만 60세 이상 동거 직계존속은 세대구성원에서 제외 (주택공급에 관한 규칙 제2조 제7호). 단, <strong style={{color:'var(--gold)'}}>이 예외는 청약 공고마다 적용 여부가 다릅니다.</strong> 개별 공고 규정을 반드시 확인하세요.</>
+            :<>💡 예외 (주택공급에 관한 규칙 제2조 제7호): 만 60세 이상 동거 직계존속은 세대구성원에서 제외되므로, 그 직계존속의 주택 소유 이력은 본인 자격에 영향을 주지 않습니다. 본인 및 60세 미만 세대원이 과거 소유 이력이 없다면 생애최초·청년 특공 신청이 가능합니다.</>
+          }
+        </div>}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div className="fi">
+          <label className="fl">무주택 기간</label>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} max={30} value={form.homelessYears} onChange={e=>set('homelessYears',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12,flexShrink:0}}>년</span></div>
+          <span className="fh" style={{lineHeight:1.7}}>
+            가점 최고 32점 (15년 이상)<br/>
+            <span style={{color:'var(--dust3)'}}>
+              기산일: ① 만 30세 생일 또는 ② 혼인신고일 중 빠른 날. 유주택이었다가 처분한 경우 처분일부터 재계산. 모집공고일 기준.
+            </span>
+          </span>
+        </div>
+        <div className="fi"><label className="fl">부양가족 수</label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} max={10} value={form.dependents} onChange={e=>set('dependents',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12,flexShrink:0}}>명</span></div><span className="fh">가점 최고 35점</span></div>
+      </div>
+
+    </div>,
+
+    <div key="s2" className="up">
+      <p style={{fontSize:20,fontWeight:700,marginBottom:4}}>소득 및 자산</p>
+      <p style={{color:'var(--dust2)',fontSize:13,marginBottom:14}}>특별공급 소득 기준 충족 여부에 사용됩니다. 만원 단위로 입력하세요.</p>
+      <div className="fi" style={{padding:'12px 14px',background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.15)',borderRadius:10,marginBottom:16}}>
+        <label className="fl" style={{marginBottom:8}}>공공주택(LH·행복주택·국민주택 등) 청약에도 관심 있나요?</label>
+        <div className="choice-row">
+          <CB label="관심 있음" active={form.interestedInPublic!==false} onClick={()=>set('interestedInPublic',true)}/>
+          <CB label="민영주택만 관심" active={form.interestedInPublic===false} onClick={()=>set('interestedInPublic',false)}/>
+        </div>
+        {form.interestedInPublic===false&&<span className="fh" style={{marginTop:6}}>자산 항목은 공공주택 청약에만 필요하므로 건너뜁니다.</span>}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div className="fi">
+          <label className="fl">가구 월평균 소득 <span style={{fontWeight:400,color:'var(--dust3)'}}>(세전)</span></label>
+          <div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} value={form.monthlyIncome} onChange={e=>set('monthlyIncome',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>만원</span></div>
+          <span className="fh">세전(총급여) 기준 — 근로소득원천징수영수증 기재 금액</span>
+        </div>
+        <div className="fi"><label className="fl">가용 현금 (예적금 등)</label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} value={form.availableCash} onChange={e=>set('availableCash',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>만원</span></div></div>
+        {form.interestedInPublic!==false&&<>
+          <div className="fi"><label className="fl">보유 부동산 가액 <span style={{fontWeight:400,color:'var(--dust3)'}}>(공시가격)</span></label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} value={form.realEstateValue} onChange={e=>set('realEstateValue',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>만원</span></div>
+            <span className="fh">토지+건물 공시가격 합산 · 공공분양 특공 기준: <strong style={{color:form.realEstateValue<=21550?'var(--jade)':'var(--ruby)'}}>21,550만원 이하</strong>{form.realEstateValue>0&&` (현재 ${form.realEstateValue<=21550?'✅ 충족':'❌ 초과'})`}</span>
+          </div>
+          <div className="fi"><label className="fl">본인+부모 총자산</label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} value={form.totalAsset} onChange={e=>set('totalAsset',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>만원</span></div>
+            <div className="fh" style={{lineHeight:1.8}}>
+              구성: 부동산(공시가격) + 금융자산(예·적금·주식 등) + 자동차(기준시가) + 기타자산<br/>
+              <span style={{color:'var(--dust3)'}}>공공분양 특공 기준: <strong style={{color:form.totalAsset<=36100?'var(--jade)':'var(--ruby)'}}>36,100만원 이하</strong>{form.totalAsset>0&&` (현재 ${form.totalAsset<=36100?'✅ 충족':'❌ 초과'})`}</span>
+            </div>
+          </div>
+        </>}
+      </div>
+      <div className="fi"><label className="fl">재직 여부</label><div className="choice-row"><CB label="재직 중" active={form.isWorking} onClick={()=>set('isWorking',true)}/><CB label="미재직/자영업" active={!form.isWorking} onClick={()=>set('isWorking',false)}/></div></div>
+      <div className="fi"><label className="fl">소득세 납부 기간</label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} max={30} value={form.incomeTaxYears} onChange={e=>set('incomeTaxYears',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>년</span></div><span className="fh">{form.incomeTaxYears>=5?'✅ 5년 이상 충족 — 생애최초·청년 특공 필수 조건':'❌ 5년 미만 — 생애최초·청년 특공 신청 불가'}</span></div>
+    </div>,
+
+    <div key="s3" className="up">
+      <p style={{fontSize:20,fontWeight:700,marginBottom:4}}>청약통장 정보</p>
+      <p style={{color:'var(--dust2)',fontSize:13,marginBottom:22}}>1순위 자격과 민영 가점제 점수 산출에 필요합니다.</p>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div className="fi"><label className="fl">가입 기간</label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} max={30} value={form.savingsYears} onChange={e=>set('savingsYears',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>년</span><input className="inp" type="number" min={0} max={11} value={form.savingsMonths} onChange={e=>set('savingsMonths',+e.target.value)} style={{width:64}}/><span style={{color:'var(--dust2)',fontSize:12}}>개월</span></div></div>
+        <div className="fi"><label className="fl">총 납입 횟수</label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} value={form.savingsCount} onChange={e=>set('savingsCount',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>회</span></div>
+          <span className="fh" style={{lineHeight:1.8}}>{form.savingsCount>=12?'✅ 공공주택 1순위 충족':form.savingsCount>=6?'⚠️ 청년특공 충족, 공공주택 1순위 미충족':'❌ 6회 미만'}<br/><span style={{color:'var(--dust3)'}}>💡 민영주택 1순위는 납입 횟수 무관 — 모집공고일 이전까지 지역·평형별 예치금(서울 85㎡ 이하 300만원~)을 일시납으로 충족해도 1순위 자격이 됩니다.</span></span>
+        </div>
+        {form.interestedInPublic!==false&&<div className="fi"><label className="fl">공공용 납입 총액</label><div style={{display:'flex',gap:6,alignItems:'center'}}><input className="inp" type="number" min={0} value={form.savingsTotalAmount} onChange={e=>set('savingsTotalAmount',+e.target.value)} style={{flex:1}}/><span style={{color:'var(--dust2)',fontSize:12}}>만원</span></div><span className="fh">월 10만원 한도 인정 — 공공주택 청약 시 활용</span></div>}
+      </div>
+    </div>,
+
+    <div key="s4" className="up">
+      <p style={{fontSize:20,fontWeight:700,marginBottom:4}}>대출 계획</p>
+      <p style={{color:'var(--dust2)',fontSize:13,marginBottom:18}}>예상 대출 조건으로 월 납입액과 이자를 계산해보세요.</p>
+      <LoanCalc targetLoanAmount={form.targetLoanAmount} onSetTarget={v=>set('targetLoanAmount',v)}/>
+      {(()=>{const cash=form.availableCash||0;const loan=form.targetLoanAmount||0;const total=cash+loan;return(
+        <div style={{marginTop:14,padding:'14px 16px',background:'rgba(46,201,140,.06)',border:'1px solid rgba(46,201,140,.2)',borderRadius:12}}>
+          <div style={{fontSize:11,color:'var(--dust3)',marginBottom:6}}>예상 구매력 상한 <span style={{fontSize:9,fontWeight:400}}>(가용현금 + 목표 대출 금액 상한)</span></div>
+          <div style={{display:'flex',alignItems:'flex-end',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:13,color:'var(--dust2)'}}>{fmtN(cash)}만</span>
+            <span style={{fontSize:13,color:'var(--dust3)'}}>+</span>
+            <span style={{fontSize:13,color:'var(--dust2)'}}>{fmtN(loan)}만</span>
+            <span style={{fontSize:13,color:'var(--dust3)'}}>=</span>
+            <span style={{fontSize:22,fontWeight:900,color:'var(--jade)'}}>{(total/10000).toFixed(2)}<span style={{fontSize:13,fontWeight:500,color:'var(--dust3)',marginLeft:2}}>억원</span></span>
+          </div>
+          <div style={{fontSize:10,color:'var(--dust3)',marginTop:5}}>이 금액 이하 분양가 공고가 홈 '매칭된 청약'에 표시됩니다 (0이면 제한 없음)</div>
+        </div>
+      );})()}
+    </div>,
+
+    <div key="s5" className="up">
+      <p style={{fontSize:20,fontWeight:700,marginBottom:4}}>관심 지역 설정</p>
+      <p style={{color:'var(--dust2)',fontSize:13,marginBottom:12}}>지도에서 시/도를 클릭하면 구/시/군 단위로 세부 선택할 수 있습니다.</p>
+      {form.interestRegions.length>0&&(
+        <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:10}}>
+          {form.interestRegions.map(r=>(
+            <span key={r} style={{display:'inline-flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:999,fontSize:11,background:'rgba(74,144,245,.15)',border:'1px solid rgba(74,144,245,.3)',color:'var(--sky)'}}>
+              {r}<button onClick={()=>set('interestRegions',form.interestRegions.filter(x=>x!==r))} style={{color:'var(--sky)',opacity:.7,fontSize:12,lineHeight:1}}>×</button>
+            </span>
+          ))}
+          <button onClick={()=>set('interestRegions',[])} style={{fontSize:11,color:'var(--dust3)',padding:'3px 8px',borderRadius:999,border:'1px solid var(--line)',background:'var(--ink3)',cursor:'pointer'}}>전체 해제</button>
+        </div>
+      )}
+      <RegionMap
+        selected={form.interestRegions}
+        onToggleDistrict={(sido,d)=>toggleDistrict(sido,d)}
+        onToggleAll={sido=>toggleAll(sido)}
+      />
+      <div style={{marginTop:10,padding:14,background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.15)',borderRadius:12}}>
+        <div style={{fontSize:12,fontWeight:700,color:'var(--sky)',marginBottom:5}}>⚠️ 면책 고지</div>
+        <div style={{fontSize:11,color:'var(--dust2)',lineHeight:1.7}}>본 서비스의 AI 자격 판단은 참고용 정보입니다. 최종 자격은 반드시 <a href="https://applyhome.co.kr" target="_blank" rel="noreferrer" style={{color:'var(--sky)'}}>청약홈(applyhome.co.kr)</a>에서 직접 확인하세요.</div>
+      </div>
+    </div>
+  ];
+
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:24,background:'var(--ink)'}}>
+      <div style={{width:'100%',maxWidth:520}}>
+        <div style={{textAlign:'center',marginBottom:32}}>
+          <div style={{fontFamily:"'Noto Serif KR',serif",fontSize:26,fontWeight:700,color:'var(--sky)',letterSpacing:'-0.5px',marginBottom:6}}>청약도우미</div>
+          <div style={{color:'var(--dust3)',fontSize:13}}>AI가 내 조건에 맞는 청약을 찾아드립니다</div>
+        </div>
+        <div style={{display:'flex',gap:4,marginBottom:24}}>
+          {STEPS.map((s,i)=>(
+            <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
+              <div style={{height:3,width:'100%',borderRadius:2,background:i<=step?'var(--sky)':'var(--line)',transition:'background .3s'}}/>
+              <span style={{fontSize:9,color:i===step?'var(--sky)':'var(--dust3)',fontWeight:i===step?700:400,whiteSpace:'nowrap'}}>{s}</span>
+            </div>
+          ))}
+        </div>
+        <div className="card" style={{marginBottom:14}}>{screens[step]}</div>
+        <div style={{display:'flex',gap:9}}>
+          {step>0&&<button className="btn btn-ghost" onClick={()=>setStep(s=>s-1)} style={{flex:1}}>← 이전</button>}
+          {step<STEPS.length-1
+            ?<button className="btn btn-sky" onClick={()=>setStep(s=>s+1)} style={{flex:1}}>다음 →</button>
+            :<button className="btn btn-sky" onClick={()=>onComplete(form)} style={{flex:1}}>🏠 시작하기</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════════ */
+function Layout({children,page,setPage,user,apiKey,onKeySet}){
+  const [km,setKm]=useState(false);
+  const [tmpK,setTmpK]=useState(apiKey);
+  const [showK,setShowK]=useState(false);
+  const nav=[{id:'home',Icon:IHome,label:'홈'},{id:'list',Icon:IBldg,label:'청약 공고'},{id:'profile',Icon:IUser,label:'내 프로필'},{id:'settings',Icon:ICog,label:'설정'}];
+  return (
+    <div style={{display:'flex',height:'100vh',overflow:'hidden'}}>
+      <aside style={{width:200,background:'var(--ink2)',borderRight:'1px solid var(--line)',display:'flex',flexDirection:'column',flexShrink:0}}>
+        <div style={{padding:'20px 16px 16px',borderBottom:'1px solid var(--line)'}}>
+          <div style={{fontFamily:"'Noto Serif KR',serif",fontSize:18,fontWeight:700,color:'var(--sky)',letterSpacing:'-0.3px'}}>청약도우미</div>
+          <div style={{fontSize:10,color:'var(--dust3)',marginTop:2}}>AI 청약 자격 분석 서비스</div>
+        </div>
+        <nav style={{flex:1,padding:'12px 9px',display:'flex',flexDirection:'column',gap:2}}>
+          {nav.map(({id,Icon,label})=>{
+            const active=page===id;
+            return <button key={id} onClick={()=>setPage(id)} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 10px',borderRadius:9,width:'100%',textAlign:'left',background:active?'rgba(74,144,245,.12)':'transparent',color:active?'var(--sky)':'var(--dust2)',fontWeight:active?600:400,fontSize:13,border:active?'1px solid rgba(74,144,245,.22)':'1px solid transparent',transition:'all .15s',cursor:'pointer'}}>
+              <Icon c={15}/>{label}
+            </button>;
+          })}
+        </nav>
+        <div style={{padding:'9px 13px',borderTop:'1px solid var(--line)'}}>
+          <button onClick={()=>{setTmpK(apiKey);setKm(true);}} style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'7px 9px',borderRadius:8,background:apiKey?'rgba(46,201,140,.08)':'rgba(240,184,64,.08)',border:`1px solid ${apiKey?'rgba(46,201,140,.2)':'rgba(240,184,64,.2)'}`,color:apiKey?'var(--jade)':'var(--gold)',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+            <IKey c={12}/>{apiKey?'AI 연결됨':'API 키 설정'}<IChevR c={10} col="currentColor" style={{marginLeft:'auto'}}/>
+          </button>
+        </div>
+        <div style={{padding:'9px 13px',borderTop:'1px solid var(--line)'}}>
+          <div style={{fontSize:10,color:'var(--dust3)'}}>현재 사용자</div>
+          <div style={{fontSize:12,color:'var(--dust)',fontWeight:600,marginTop:1}}>{user.sido} {user.sigungu}</div>
+        </div>
+      </aside>
+      <main style={{flex:1,overflow:'auto'}}>{children}</main>
+      {km&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:999}}>
+          <div className="card" style={{width:400,position:'relative'}}>
+            <button onClick={()=>setKm(false)} style={{position:'absolute',top:14,right:14,color:'var(--dust3)',padding:3}}><IX c={16}/></button>
+            <div style={{fontSize:16,fontWeight:700,marginBottom:5}}>Claude API 키 설정</div>
+            <div style={{fontSize:12,color:'var(--dust2)',marginBottom:16,lineHeight:1.7}}>AI 자격 분석·대출 계산·챗봇 기능에 필요합니다.<br/>키는 브라우저(localStorage)에만 저장되며 외부 서버로 전송되지 않습니다.</div>
+            <div className="fi">
+              <label className="fl">API 키</label>
+              <div style={{position:'relative'}}>
+                <input className="inp" type={showK?'text':'password'} placeholder="sk-ant-..." value={tmpK} onChange={e=>setTmpK(e.target.value)} onKeyDown={e=>e.key==='Enter'&&(onKeySet(tmpK.trim()),setKm(false))} style={{paddingRight:40}}/>
+                <button onClick={()=>setShowK(s=>!s)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'var(--dust3)',padding:4,cursor:'pointer'}}>
+                  {showK?<IEyeOff c={14}/>:<IEye c={14}/>}
+                </button>
+              </div>
+              <span className="fh"><a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:'var(--sky)'}}>console.anthropic.com</a>에서 발급 · claude-sonnet-4 사용</span>
+            </div>
+            <div style={{display:'flex',gap:7,justifyContent:'flex-end'}}>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setKm(false)}>취소</button>
+              <button className="btn btn-sky btn-sm" onClick={()=>{onKeySet(tmpK.trim());setKm(false);}}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   SCORE RING
+═══════════════════════════════════════════════ */
+function ScoreRing({score,max=84,size=80}){
+  const r=size/2-5,circ=2*Math.PI*r,pct=score/max;
+  return (
+    <svg width={size} height={size} style={{transform:'rotate(-90deg)'}}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--line)" strokeWidth={5}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--sky)" strokeWidth={5}
+        strokeDasharray={circ} strokeDashoffset={circ*(1-pct)} strokeLinecap="round"
+        style={{transition:'stroke-dashoffset 1.2s ease'}}/>
+      <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="middle"
+        style={{transform:`rotate(90deg)`,transformOrigin:`${size/2}px ${size/2}px`,fill:'var(--dust)',fontSize:16,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
+        {score}
+      </text>
+    </svg>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   HOME / DASHBOARD
+═══════════════════════════════════════════════ */
+function Home({user,apiKey,setPage,setDid,announcements}){
+  const favIds=S.getFavs();
+  const g=calcGajeom(user);
+  const regs=user.interestRegions||[];
+  const budgetLimit=(user.availableCash||0)+(user.targetLoanAmount||0);
+  const matched=useMemo(()=>announcements.filter(a=>{
+    const rm=matchRegion(a.location.sido,a.location.sigungu,regs);
+    const prices=a.houseTypes.map(h=>h.price).filter(p=>p>0);
+    const minP=prices.length?Math.min(...prices):0;
+    return rm&&(!budgetLimit||!minP||minP<=budgetLimit);
+  }),[user,announcements]);
+
+  const upcoming=announcements.flatMap(a=>[
+    {name:a.name,ev:'청약접수',date:a.schedule.general,id:a.id},
+    {name:a.name,ev:'당첨발표',date:a.schedule.winner,id:a.id},
+  ]).filter(e=>e.date&&new Date(e.date)>=new Date()).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,4);
+
+  const Stat=({label,val,col,onClick})=>(
+    <div className="card" style={{cursor:onClick?'pointer':'default',transition:'border-color .15s'}}
+      onClick={onClick}
+      onMouseEnter={e=>onClick&&(e.currentTarget.style.borderColor='var(--line2)')}
+      onMouseLeave={e=>onClick&&(e.currentTarget.style.borderColor='var(--line)')}>
+      <div style={{fontSize:11,color:'var(--dust3)',marginBottom:8}}>{label}</div>
+      <div style={{fontSize:30,fontWeight:900,color:col||'var(--sky)'}}>{val}</div>
+      {onClick&&<div style={{display:'flex',alignItems:'center',gap:3,color:'var(--sky)',fontSize:11,marginTop:8}}>보기 <IChevR c={11} col="var(--sky)"/></div>}
+    </div>
+  );
+
+  return (
+    <div style={{padding:28,maxWidth:920,margin:'0 auto'}}>
+      <div style={{marginBottom:26}}>
+        <div style={{fontSize:20,fontWeight:700,marginBottom:3}}>안녕하세요 👋</div>
+        <div style={{color:'var(--dust2)',fontSize:13}}>{user.sido} {user.sigungu} · 만{new Date().getFullYear()-user.birthYear}세 · {user.married?'기혼':'미혼'} · {user.houseOwnership==='none'?'무주택':user.houseOwnership==='one'?'1주택':'다주택'}</div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'auto 1fr 1fr',gap:12,marginBottom:24}}>
+        <div className="card" style={{display:'flex',alignItems:'center',gap:18}}>
+          <ScoreRing score={g.total}/>
+          <div>
+            <div style={{fontSize:11,color:'var(--dust3)',marginBottom:3}}>내 청약 가점</div>
+            <div style={{fontSize:24,fontWeight:900,color:'var(--sky)'}}>{g.total}<span style={{fontSize:13,fontWeight:400,color:'var(--dust3)'}}>/84점</span></div>
+            <div style={{fontSize:10,color:'var(--dust3)',marginTop:6,lineHeight:1.8}}>
+              무주택 {g.hl}점 · 부양 {g.dp}점 · 통장 {g.sv}점
+            </div>
+          </div>
+        </div>
+        <Stat label="📡 매칭된 청약" val={matched.length} col="var(--jade)" onClick={()=>setPage('matched')}/>
+        <Stat label="⭐ 즐겨찾기" val={favIds.length} col="var(--gold)" onClick={()=>setPage('list')}/>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <div style={{fontWeight:700,fontSize:14}}>매칭된 공고</div>
+            <button onClick={()=>setPage('list')} style={{fontSize:11,color:'var(--sky)',display:'flex',alignItems:'center',gap:2,cursor:'pointer'}}>전체보기 <IChevR c={11} col="var(--sky)"/></button>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {matched.slice(0,3).map(a=>(
+              <div key={a.id} className="card-sm" onClick={()=>{setDid(a.id);setPage('detail');}} style={{cursor:'pointer',transition:'border-color .15s'}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor='var(--line2)'}
+                onMouseLeave={e=>e.currentTarget.style.borderColor='var(--line)'}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:600,marginBottom:3,lineHeight:1.4}}>{a.name}</div>
+                    <div style={{fontSize:11,color:'var(--dust3)',display:'flex',alignItems:'center',gap:3}}>
+                      <IPin c={10}/>{a.location.sido} {a.location.sigungu}
+                    </div>
+                  </div>
+                  <IChevR c={12} col="var(--dust3)"/>
+                </div>
+                <div style={{display:'flex',gap:5,marginTop:8,flexWrap:'wrap',alignItems:'center',justifyContent:'space-between'}}>
+                  <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{a.tags.slice(0,2).map(t=><span key={t} className="tag">{t}</span>)}</div>
+                  <span style={{fontSize:12,color:'var(--jade)',fontWeight:700}}>{(()=>{const ps=a.houseTypes.map(h=>h.price).filter(p=>p>0);return ps.length?fmtN(Math.min(...ps))+'만~':'공고 확인';})()}</span>
+                </div>
+              </div>
+            ))}
+            {matched.length===0&&<div style={{padding:'20px',textAlign:'center',color:'var(--dust3)',fontSize:13}}>조건에 맞는 청약이 없습니다</div>}
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>다가오는 일정</div>
+          <div className="card-sm" style={{padding:14}}>
+            <MiniCalendar announcements={announcements} setPage={setPage} setDid={setDid}/>
+          </div>
+          {!apiKey&&(
+            <div style={{marginTop:14,padding:14,borderRadius:12,background:'rgba(240,184,64,.06)',border:'1px solid rgba(240,184,64,.2)'}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--gold)',marginBottom:5}}>🤖 AI 분석 미연결</div>
+              <div style={{fontSize:11,color:'var(--dust2)',lineHeight:1.6}}>사이드바에서 Claude API 키를 설정하면 AI 자격 판단·맞춤 대출 분석·챗봇 Q&A를 이용할 수 있습니다.</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   LIST PAGE
+═══════════════════════════════════════════════ */
+function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=false}){
+  const [favIds,setFavIds]=useState(S.getFavs());
+  const [flt,setFlt]=useState({region:'',type:'',fav:false,q:''});
+  const toggle=id=>setFavIds(S.toggleFav(id));
+  const regs=user.interestRegions||[];
+  const budgetLimitL=(user.availableCash||0)+(user.targetLoanAmount||0);
+  const baseList=useMemo(()=>matchedOnly?announcements.filter(a=>{
+    const rm=matchRegion(a.location.sido,a.location.sigungu,regs);
+    const prices=a.houseTypes.map(h=>h.price).filter(p=>p>0);
+    const minP=prices.length?Math.min(...prices):0;
+    return rm&&(!budgetLimitL||!minP||minP<=budgetLimitL);
+  }):announcements,[matchedOnly,user,announcements]);
+  const filtered=baseList.filter(a=>{
+    if(flt.fav&&!favIds.includes(a.id))return false;
+    if(flt.region&&!matchRegion(a.location.sido,a.location.sigungu,[flt.region]))return false;
+    if(flt.type&&a.type!==flt.type)return false;
+    if(flt.q&&!a.name.includes(flt.q))return false;
+    return true;
+  });
+
+  return (
+    <div style={{padding:28,maxWidth:920,margin:'0 auto'}}>
+      <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:3}}>{matchedOnly?'📡 매칭된 청약':'청약 공고'}</div>
+          <div style={{color:'var(--dust3)',fontSize:13}}>
+            {matchedOnly?`${baseList.length}건 매칭 (관심지역 + 분양가 기준) · `:`총 ${announcements.length}건 · `}
+            {dataSource==='api'?'청약홈 API 실데이터':dataSource==='offline'?'더미 데이터':'로딩 중…'}
+          </div>
+        </div>
+        {matchedOnly&&<button className="btn btn-ghost btn-sm" onClick={()=>setPage('list')}><IBldg c={13}/>전체 공고 보기</button>}
+      </div>
+
+      <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{position:'relative',flex:1,minWidth:160}}>
+          <ISearch c={13} col="var(--dust3)" style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)'}}/>
+          <input className="inp" placeholder="단지명 검색" value={flt.q} onChange={e=>setFlt(f=>({...f,q:e.target.value}))} style={{paddingLeft:30}}/>
+        </div>
+        <select className="inp" style={{width:105}} value={flt.region} onChange={e=>setFlt(f=>({...f,region:e.target.value}))}>
+          <option value="">전체 지역</option>
+          {['서울','경기','인천','부산','대구'].map(r=><option key={r}>{r}</option>)}
+        </select>
+        <select className="inp" style={{width:90}} value={flt.type} onChange={e=>setFlt(f=>({...f,type:e.target.value}))}>
+          <option value="">전체 유형</option>
+          <option>민영</option><option>공공</option>
+        </select>
+        <button onClick={()=>setFlt(f=>({...f,fav:!f.fav}))} style={{display:'flex',alignItems:'center',gap:5,padding:'9px 12px',borderRadius:9,background:flt.fav?'rgba(240,184,64,.12)':'var(--ink3)',border:`1px solid ${flt.fav?'rgba(240,184,64,.3)':'var(--line)'}`,color:flt.fav?'var(--gold)':'var(--dust2)',fontSize:12,fontWeight:600,cursor:'pointer',flexShrink:0}}>
+          <IStar c={12} fill={flt.fav?'var(--gold)':'none'} col={flt.fav?'var(--gold)':'var(--dust2)'}/>즐겨찾기
+        </button>
+      </div>
+
+      {regs.length>0&&(
+        <div style={{display:'flex',gap:5,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+          <span style={{fontSize:11,color:'var(--dust3)'}}>관심지역:</span>
+          {regs.map(r=>(
+            <button key={r} onClick={()=>setFlt(f=>({...f,region:f.region===r?'':r}))} style={{padding:'3px 10px',borderRadius:999,fontSize:11,background:flt.region===r?'rgba(74,144,245,.15)':'var(--ink3)',border:`1px solid ${flt.region===r?'var(--sky)':'var(--line)'}`,color:flt.region===r?'var(--sky)':'var(--dust2)',cursor:'pointer',transition:'all .15s'}}>{r}</button>
+          ))}
+          {flt.region&&<button onClick={()=>setFlt(f=>({...f,region:''}))} style={{fontSize:11,color:'var(--dust3)',padding:'3px 8px',borderRadius:999,border:'1px solid var(--line)',background:'var(--ink3)',cursor:'pointer'}}>필터 해제</button>}
+        </div>
+      )}
+
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {filtered.length===0&&<div style={{padding:'48px',textAlign:'center',color:'var(--dust3)'}}>조건에 맞는 청약이 없습니다</div>}
+        {filtered.map(a=>{
+          const isFav=favIds.includes(a.id);
+          const prices=a.houseTypes.map(h=>h.price).filter(p=>p>0);
+          const minP=prices.length?Math.min(...prices):0;
+          const maxP=prices.length?Math.max(...prices):0;
+          const myReg=matchRegion(a.location.sido,a.location.sigungu,regs);
+          return (
+            <div key={a.id} className="card" style={{cursor:'pointer',transition:'border-color .15s',position:'relative'}}
+              onClick={()=>{setDid(a.id);setPage('detail');}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor='var(--line2)'}
+              onMouseLeave={e=>e.currentTarget.style.borderColor='var(--line)'}>
+              {myReg&&<div style={{position:'absolute',top:-1,left:16,background:'var(--sky)',color:'#fff',fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:'0 0 5px 5px',letterSpacing:'.3px'}}>관심지역</div>}
+              <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',gap:5,marginBottom:7}}>
+                    <span className={`chip chip-${a.type==='민영'?'sky':'jade'}`}>{a.type}</span>
+                    {a.restrictions.regulated&&<span className="chip chip-ruby">규제지역</span>}
+                  </div>
+                  <div style={{fontSize:15,fontWeight:700,marginBottom:5,lineHeight:1.3}}>{a.name}</div>
+                  <div style={{display:'flex',gap:12,color:'var(--dust3)',fontSize:11}}>
+                    <span style={{display:'flex',alignItems:'center',gap:3}}><IPin c={10}/>{a.location.sido} {a.location.sigungu}</span>
+                    <span>총 {a.totalUnits}세대 · 최고 {a.maxFloor}층</span>
+                  </div>
+                </div>
+                <div style={{textAlign:'right',flexShrink:0}}>
+                  <div style={{fontSize:14,fontWeight:700,color:'var(--jade)'}}>{minP?minP===maxP?fmtN(minP)+'만':fmtN(minP)+'~'+fmtN(maxP)+'만':'공고 확인'}</div>
+                  <div style={{fontSize:10,color:'var(--dust3)',marginTop:1}}>분양가</div>
+                </div>
+              </div>
+              <div className="divider" style={{margin:'11px 0'}}/>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                  {a.houseTypes.map(h=><span key={h.t} className="tag">{h.t} ({h.area}㎡)</span>)}
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <span style={{fontSize:11,color:'var(--dust3)',display:'flex',alignItems:'center',gap:3}}><ICal c={10}/>접수 {a.schedule.general}</span>
+                  <button onClick={e=>{e.stopPropagation();toggle(a.id);}} style={{padding:'5px 9px',borderRadius:7,display:'flex',alignItems:'center',gap:3,background:isFav?'rgba(240,184,64,.12)':'var(--ink3)',border:`1px solid ${isFav?'rgba(240,184,64,.3)':'var(--line)'}`,color:isFav?'var(--gold)':'var(--dust3)',fontSize:11,cursor:'pointer',transition:'all .15s'}}>
+                    <IStar c={11} fill={isFav?'var(--gold)':'none'} col={isFav?'var(--gold)':'currentColor'}/>{isFav?'저장됨':'저장'}
+                  </button>
+                  <IChevR c={12} col="var(--dust3)"/>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   DETAIL PAGE
+═══════════════════════════════════════════════ */
+function DetailPage({annId,user,apiKey,setPage,announcements}){
+  const a=announcements.find(x=>x.id===annId);
+  const [favIds,setFavIds]=useState(S.getFavs());
+  const [analysis,setAnalysis]=useState(null);
+  const [analyzing,setAnalyzing]=useState(false);
+  const [aiErr,setAiErr]=useState('');
+  const [chatOpen,setChatOpen]=useState(false);
+  const [hist,setHist]=useState([]);
+  const [chatQ,setChatQ]=useState('');
+  const [chatLoading,setChatLoading]=useState(false);
+  const [showPay,setShowPay]=useState(false);
+  const chatEnd=useRef();
+
+  useEffect(()=>{chatEnd.current?.scrollIntoView({behavior:'smooth'})},[hist]);
+
+  if(!a)return <div style={{padding:32,color:'var(--dust3)'}}>공고를 찾을 수 없습니다</div>;
+
+  const isFav=favIds.includes(a.id);
+  const toggle=()=>setFavIds(S.toggleFav(a.id));
+  const g=calcGajeom(user);
+  const minP=Math.min(...a.houseTypes.map(h=>h.price));
+
+  const runAnalysis=async()=>{
+    if(!apiKey){setAiErr('Claude API 키를 먼저 설정해주세요 (사이드바 하단)');return;}
+    setAnalyzing(true);setAiErr('');
+    try{setAnalysis(await aiAnalyze(apiKey,user,a));}
+    catch(e){setAiErr(e.message);}
+    finally{setAnalyzing(false);}
+  };
+
+  const doChat=async()=>{
+    if(!chatQ.trim()||chatLoading)return;
+    if(!apiKey){setHist(h=>[...h,{role:'assistant',content:'API 키를 먼저 설정해주세요.'}]);return;}
+    const q=chatQ.trim();setChatQ('');
+    const newH=[...hist,{role:'user',content:q}];
+    setHist(newH);setChatLoading(true);
+    try{const ans=await aiChat(apiKey,user,a,hist,q);setHist(h=>[...h,{role:'assistant',content:ans}]);}
+    catch(e){setHist(h=>[...h,{role:'assistant',content:'오류: '+e.message}]);}
+    finally{setChatLoading(false);}
+  };
+
+  const EBadge=({ok})=>ok
+    ?<span style={{display:'flex',alignItems:'center',gap:3,color:'var(--jade)',fontSize:12,fontWeight:700}}><ICheck c={13} col="var(--jade)"/>자격 있음</span>
+    :<span style={{display:'flex',alignItems:'center',gap:3,color:'var(--ruby)',fontSize:12,fontWeight:600}}><IX c={13} col="var(--ruby)"/>자격 없음</span>;
+
+  return (
+    <div style={{maxWidth:920,margin:'0 auto'}}>
+      <div style={{padding:'14px 28px',borderBottom:'1px solid var(--line)',display:'flex',alignItems:'center',gap:14,position:'sticky',top:0,background:'rgba(13,15,20,.96)',backdropFilter:'blur(8px)',zIndex:9}}>
+        <button onClick={()=>setPage('list')} style={{display:'flex',alignItems:'center',gap:5,color:'var(--dust2)',fontSize:12,cursor:'pointer'}}><IArrowLeft c={15}/>목록</button>
+        <div style={{flex:1,fontWeight:700,fontSize:14,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name}</div>
+        <button onClick={toggle} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:8,background:isFav?'rgba(240,184,64,.12)':'var(--ink3)',border:`1px solid ${isFav?'rgba(240,184,64,.3)':'var(--line)'}`,color:isFav?'var(--gold)':'var(--dust2)',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+          <IStar c={12} fill={isFav?'var(--gold)':'none'} col={isFav?'var(--gold)':'currentColor'}/>{isFav?'저장됨':'저장'}
+        </button>
+      </div>
+
+      <div style={{padding:'22px 28px',display:'grid',gridTemplateColumns:'1fr 340px',gap:20,alignItems:'start'}}>
+        <div>
+          <div className="card" style={{marginBottom:14}}>
+            <div style={{display:'flex',gap:6,marginBottom:10}}>
+              <span className={`chip chip-${a.type==='민영'?'sky':'jade'}`}>{a.type}주택</span>
+              {a.restrictions.regulated&&<span className="chip chip-ruby">규제지역</span>}
+              {a.tags.map(t=><span key={t} className="chip chip-dust">{t}</span>)}
+            </div>
+            <div style={{fontSize:18,fontWeight:800,marginBottom:7,lineHeight:1.3}}>{a.name}</div>
+            <div style={{color:'var(--dust2)',fontSize:12,marginBottom:14,display:'flex',gap:14}}>
+              <span style={{display:'flex',alignItems:'center',gap:3}}><IPin c={11}/>{a.location.address}</span>
+              <span>최고 {a.maxFloor}층 · {a.buildings}개동 · 총 {a.totalUnits}세대</span>
+            </div>
+            <div className="stitle">청약 일정</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              {[['모집공고',a.schedule.announcement],['특공접수',a.schedule.special],['일반접수',a.schedule.general],['당첨발표',a.schedule.winner],['계약',a.schedule.contract],['입주예정',a.schedule.moveIn]].map(([l,d])=>(
+                <div key={l} style={{padding:'9px 11px',background:'var(--ink3)',borderRadius:9,border:'1px solid var(--line)'}}>
+                  <div style={{fontSize:10,color:'var(--dust3)',marginBottom:2}}>{l}</div>
+                  <div style={{fontSize:12,fontWeight:600}}>{d}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{marginBottom:14}}>
+            <div className="stitle">제한 사항</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}}>
+              {[['규제지역',a.restrictions.regulated?'해당':'비규제',a.restrictions.regulated?'ruby':'jade'],['전매제한',`${a.restrictions.resale}년`,'dust'],['재당첨제한',`${a.restrictions.reapply}년`,'dust'],['거주의무',a.restrictions.residence?`${a.restrictions.residence}년`:'없음',a.restrictions.residence?'gold':'jade']].map(([l,v,c])=>(
+                <div key={l} style={{padding:'11px',background:'var(--ink3)',borderRadius:9,border:'1px solid var(--line)'}}>
+                  <div style={{fontSize:10,color:'var(--dust3)',marginBottom:3}}>{l}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:c==='ruby'?'var(--ruby)':c==='jade'?'var(--jade)':c==='gold'?'var(--gold)':'var(--dust)'}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{marginBottom:14}}>
+            <div className="stitle">주택형별 정보</div>
+            {a.houseTypes.map(h=>(
+              <div key={h.t} style={{padding:'13px',background:'var(--ink3)',borderRadius:10,border:'1px solid var(--line)',marginBottom:8}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div><span style={{fontWeight:700,fontSize:14,marginRight:8}}>{h.t}타입</span><span style={{color:'var(--dust2)',fontSize:12}}>전용 {h.area}㎡ · 총 {h.units}세대</span></div>
+                  <div style={{fontSize:15,fontWeight:700,color:'var(--jade)'}}>{fmtN(h.price)}만원</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card">
+            <button onClick={()=>setShowPay(p=>!p)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',cursor:'pointer'}}>
+              <div className="stitle" style={{margin:0}}>납부 일정 ({a.houseTypes[0]?.t}타입 기준)</div>
+              {showPay?<IChevU c={14} col="var(--dust3)"/>:<IChevD c={14} col="var(--dust3)"/>}
+            </button>
+            {showPay&&(()=>{const h=a.houseTypes[0];if(!h||!h.price)return <div style={{padding:'14px 0',color:'var(--dust3)',fontSize:12}}>주택형 분양가 정보는 청약홈 공고문을 확인하세요.</div>;const p=h.price;return(
+              <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+                <div style={{display:'flex',justifyContent:'space-between',padding:'10px 12px',background:'var(--ink3)',borderRadius:8,border:'1px solid var(--line)'}}>
+                  <span style={{fontSize:12}}>계약금 ({a.payment.down}%)</span>
+                  <span style={{fontWeight:700}}>{fmtN(Math.round(p*a.payment.down/100))}만원</span>
+                </div>
+                {a.payment.mid.map((m,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'10px 12px',background:'var(--ink3)',borderRadius:8,border:'1px solid var(--line)'}}>
+                    <span style={{fontSize:12}}>중도금 {i+1}차 ({m.r}%) — {m.d}</span>
+                    <span style={{fontWeight:700}}>{fmtN(Math.round(p*m.r/100))}만원</span>
+                  </div>
+                ))}
+                <div style={{display:'flex',justifyContent:'space-between',padding:'10px 12px',background:'rgba(74,144,245,.06)',borderRadius:8,border:'1px solid rgba(74,144,245,.2)'}}>
+                  <span style={{fontSize:12}}>잔금 ({a.payment.bal}%) — 입주 시</span>
+                  <span style={{fontWeight:700,color:'var(--sky)'}}>{fmtN(Math.round(p*a.payment.bal/100))}만원</span>
+                </div>
+              </div>
+            );})()}
+          </div>
+        </div>
+
+        <div style={{position:'sticky',top:60}}>
+          <div className="card-sm" style={{marginBottom:12}}>
+            <div className="stitle">내 현황 요약</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
+              {[['가점합계',`${g.total}점`],['무주택',`${user.homelessYears||0}년`],['부양가족',`${user.dependents||0}명`],['가용현금',`${fmtN(user.availableCash)}만`]].map(([k,v])=>(
+                <div key={k} style={{padding:'9px',background:'var(--ink3)',borderRadius:8,border:'1px solid var(--line)'}}>
+                  <div style={{fontSize:10,color:'var(--dust3)'}}>{k}</div>
+                  <div style={{fontSize:14,fontWeight:700,marginTop:1}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card-sm" style={{marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
+              <ISpark c={15} col="var(--sky)"/>
+              <span style={{fontWeight:700,fontSize:14}}>AI 자격 분석</span>
+            </div>
+
+            {!analysis&&!analyzing&&(
+              <>
+                <div style={{fontSize:12,color:'var(--dust2)',lineHeight:1.6,marginBottom:12}}>내 인적사항과 이 청약 조건을 AI가 종합 분석하여 자격 여부와 맞춤 조언을 제공합니다.</div>
+                {aiErr&&<div style={{padding:'9px 11px',background:'rgba(240,96,96,.08)',border:'1px solid rgba(240,96,96,.2)',borderRadius:8,fontSize:11,color:'var(--ruby)',marginBottom:10}}>{aiErr}</div>}
+                <button className="btn btn-sky" onClick={runAnalysis} style={{width:'100%',justifyContent:'center',fontSize:13}}>
+                  <ISpark c={13}/>AI 분석 시작
+                </button>
+                <div style={{fontSize:10,color:'var(--dust3)',marginTop:7,textAlign:'center'}}>⚠️ 결과는 참고용 · 최종 확인은 청약홈에서</div>
+              </>
+            )}
+
+            {analyzing&&(
+              <div style={{textAlign:'center',padding:'18px 0'}}>
+                <ILoader c={22} col="var(--sky)" s={{display:'block',margin:'0 auto 10px'}}/>
+                <div style={{fontSize:12,color:'var(--dust2)'}}>AI가 분석 중입니다…</div>
+              </div>
+            )}
+
+            {analysis&&(
+              <div className="up">
+                <div style={{display:'flex',flexDirection:'column',gap:7,marginBottom:12}}>
+                  {analysis.types?.map((t,i)=>(
+                    <div key={i} style={{padding:'11px',borderRadius:9,background:t.ok?'rgba(46,201,140,.06)':'rgba(240,96,96,.05)',border:`1px solid ${t.ok?'rgba(46,201,140,.2)':'rgba(240,96,96,.15)'}`}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                        <span style={{fontSize:11,fontWeight:700}}>{t.name}</span>
+                        <EBadge ok={t.ok}/>
+                      </div>
+                      <div style={{fontSize:10,color:'var(--dust2)',lineHeight:1.6}}>{t.point}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {analysis.gajeom&&(
+                  <div style={{padding:'10px',background:'rgba(74,144,245,.06)',border:'1px solid rgba(74,144,245,.15)',borderRadius:9,marginBottom:9}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'var(--sky)',marginBottom:4,display:'flex',alignItems:'center',gap:3}}><ITrend c={11} col="var(--sky)"/>가점 분석</div>
+                    <div style={{fontSize:10,color:'var(--dust2)',lineHeight:1.6}}>{analysis.gajeom}</div>
+                  </div>
+                )}
+
+                {analysis.pros?.length>0&&<div style={{marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:700,color:'var(--jade)',marginBottom:3}}>✅ 유리한 점</div>
+                  {analysis.pros.map((p,i)=><div key={i} style={{fontSize:10,color:'var(--dust2)',marginBottom:2}}>• {p}</div>)}
+                </div>}
+
+                {analysis.cons?.length>0&&<div style={{marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:700,color:'var(--ruby)',marginBottom:3}}>⚠️ 불리한 점</div>
+                  {analysis.cons.map((p,i)=><div key={i} style={{fontSize:10,color:'var(--dust2)',marginBottom:2}}>• {p}</div>)}
+                </div>}
+
+                {analysis.loan&&(
+                  <div style={{padding:'10px',background:'var(--ink3)',borderRadius:9,border:'1px solid var(--line)',marginBottom:9}}>
+                    <div style={{fontSize:10,fontWeight:600,color:'var(--dust2)',marginBottom:7}}>대출 예상</div>
+                    <div style={{display:'flex',gap:12,marginBottom:5}}>
+                      <div><div style={{fontSize:9,color:'var(--dust3)'}}>예상 한도</div><div style={{fontSize:15,fontWeight:700,color:'var(--sky)'}}>{fmtN(analysis.loan.max)}만</div></div>
+                      <div><div style={{fontSize:9,color:'var(--dust3)'}}>월 상환(30년)</div><div style={{fontSize:15,fontWeight:700}}>{fmtN(analysis.loan.monthly)}만</div></div>
+                    </div>
+                    <div style={{fontSize:10,color:'var(--dust3)'}}>{analysis.loan.note}</div>
+                  </div>
+                )}
+
+                {analysis.advice&&(
+                  <div style={{padding:'10px',background:'rgba(109,106,240,.06)',border:'1px solid rgba(109,106,240,.2)',borderRadius:9,marginBottom:9}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'var(--sky2)',marginBottom:5}}>💡 AI 종합 조언</div>
+                    <div style={{fontSize:10,color:'var(--dust2)',lineHeight:1.7}}>{analysis.advice}</div>
+                  </div>
+                )}
+
+                <button className="btn btn-ghost btn-sm" onClick={()=>setAnalysis(null)} style={{width:'100%',justifyContent:'center',fontSize:11}}>다시 분석</button>
+              </div>
+            )}
+          </div>
+
+          <div className="card-sm">
+            <button onClick={()=>setChatOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',cursor:'pointer'}}>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <IMsg c={15} col="var(--sky2)"/>
+                <span style={{fontWeight:700,fontSize:14}}>AI 질문하기</span>
+                {hist.length>0&&<span style={{padding:'1px 5px',borderRadius:999,background:'var(--sky2)',color:'#fff',fontSize:9,fontWeight:700}}>{hist.length}</span>}
+              </div>
+              {chatOpen?<IChevU c={13} col="var(--dust3)"/>:<IChevD c={13} col="var(--dust3)"/>}
+            </button>
+
+            {chatOpen&&(
+              <div style={{marginTop:12}} className="up">
+                {hist.length===0&&(
+                  <div style={{marginBottom:10}}>
+                    <div style={{fontSize:11,color:'var(--dust3)',marginBottom:7}}>빠른 질문</div>
+                    {['내가 이 청약 신청 가능한가요?','중도금 대출 조건이 궁금해요','이 지역 최근 경쟁률이 어때요?'].map(q=>(
+                      <button key={q} onClick={()=>setChatQ(q)} style={{display:'block',width:'100%',textAlign:'left',padding:'7px 10px',borderRadius:8,background:'var(--ink3)',border:'1px solid var(--line)',color:'var(--dust2)',fontSize:11,marginBottom:5,cursor:'pointer',transition:'all .15s'}}>{q}</button>
+                    ))}
+                  </div>
+                )}
+
+                {hist.length>0&&(
+                  <div style={{maxHeight:240,overflowY:'auto',display:'flex',flexDirection:'column',gap:8,marginBottom:10,padding:2}}>
+                    {hist.map((m,i)=>(
+                      <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+                        <div style={{maxWidth:'88%',padding:'9px 11px',borderRadius:m.role==='user'?'12px 12px 4px 12px':'12px 12px 12px 4px',background:m.role==='user'?'var(--sky)':'var(--ink3)',border:m.role==='assistant'?'1px solid var(--line)':'none',fontSize:11,lineHeight:1.6,color:m.role==='user'?'#fff':'var(--dust)',whiteSpace:'pre-wrap'}}>
+                          {m.content}
+                        </div>
+                      </div>
+                    ))}
+                    {chatLoading&&<div style={{display:'flex'}}><div style={{padding:'9px 12px',background:'var(--ink3)',border:'1px solid var(--line)',borderRadius:'12px 12px 12px 4px'}}><ILoader c={13} col="var(--sky)"/></div></div>}
+                    <div ref={chatEnd}/>
+                  </div>
+                )}
+
+                <div style={{display:'flex',gap:7}}>
+                  <input className="inp" placeholder="청약에 대해 물어보세요…" value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doChat()} style={{flex:1,fontSize:12,padding:'8px 11px'}}/>
+                  <button onClick={doChat} disabled={chatLoading||!chatQ.trim()} style={{padding:'8px 12px',borderRadius:9,background:'var(--sky)',color:'#fff',opacity:(!chatQ.trim()||chatLoading)?0.45:1,cursor:'pointer',display:'flex',alignItems:'center'}}>
+                    <ISend c={13}/>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   PROFILE PAGE
+═══════════════════════════════════════════════ */
+function ProfilePage({user,setPage}){
+  const g=calcGajeom(user);
+  const fam=1+(user.married?1:0)+(user.dependents||0);
+  const pAge=new Date().getFullYear()-user.birthYear;
+  const nowP=new Date();
+  const parentManAgeP=user.parentBirthYear?(nowP.getFullYear()-user.parentBirthYear-(nowP.getMonth()+1<(user.parentBirthMonth||1)?1:0)):0;
+  const i130=incomeCheck(user.monthlyIncome||0,fam,130);
+  const i140=incomeCheck(user.monthlyIncome||0,fam,140);
+  const i160=incomeCheck(user.monthlyIncome||0,fam,160);
+
+  const Row=({label,val,sub,ok})=>(
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'11px 0',borderBottom:'1px solid var(--line)'}}>
+      <div><div style={{fontSize:13,color:'var(--dust2)'}}>{label}</div>{sub&&<div style={{fontSize:10,color:'var(--dust3)',marginTop:2}}>{sub}</div>}</div>
+      <div style={{fontSize:13,fontWeight:700,color:ok===true?'var(--jade)':ok===false?'var(--ruby)':ok==='warn'?'var(--gold)':'var(--dust)',textAlign:'right'}}>{val}</div>
+    </div>
+  );
+
+  return (
+    <div style={{padding:28,maxWidth:840,margin:'0 auto'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
+        <div style={{fontSize:20,fontWeight:700}}>내 프로필</div>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setPage('settings')}><ICog c={13}/>수정</button>
+      </div>
+
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:14}}>
+          <ITrend c={15} col="var(--sky)"/>
+          <span style={{fontWeight:700,fontSize:14}}>청약 가점 요약</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+          {[['총 가점',`${g.total}점`,'/84점','var(--sky)'],['무주택',`${g.hl}점`,`${user.homelessYears||0}년`,null],['부양가족',`${g.dp}점`,`${user.dependents||0}명`,null],['청약통장',`${g.sv}점`,`${user.savingsYears||0}년${user.savingsMonths||0}개월`,null]].map(([l,v,s,c])=>(
+            <div key={l} style={{padding:'14px',background:'var(--ink3)',borderRadius:11,border:'1px solid var(--line)',textAlign:'center'}}>
+              <div style={{fontSize:10,color:'var(--dust3)',marginBottom:5}}>{l}</div>
+              <div style={{fontSize:22,fontWeight:900,color:c||'var(--dust)'}}>{v}</div>
+              <div style={{fontSize:10,color:'var(--dust3)',marginTop:3}}>{s}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        <div className="card">
+          <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}><IUser c={14} col="var(--sky)"/><span style={{fontWeight:700,fontSize:13}}>기본 정보</span></div>
+          <Row label="출생연도" val={`${user.birthYear}년 (만${new Date().getFullYear()-user.birthYear}세)`}/>
+          <Row label="거주지" val={`${user.sido} ${user.sigungu}`}/>
+          <Row label="혼인 여부" val={user.married?'기혼':'미혼'}/>
+          <Row label="세대주 여부" val={user.isHouseholder?'세대주':'세대원'}/>
+        </div>
+
+        <div className="card">
+          <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}><ILoader c={14} col="var(--jade)"/><span style={{fontWeight:700,fontSize:13}}>주택 현황</span></div>
+          <Row label="주택 소유" val={user.houseOwnership==='none'?'무주택':user.houseOwnership==='one'?'1주택':'다주택'} ok={user.houseOwnership==='none'}/>
+          <Row label="과거 소유 이력" val={user.hadHouseBefore?'있음':'없음'} ok={!user.hadHouseBefore?true:parentManAgeP>=60?'warn':false} sub={user.hadHouseBefore&&parentManAgeP>=60?'직계존속 60세+ 예외 — 공고별 확인 필요':undefined}/>
+          <Row label="생애최초 특공" val={!user.hadHouseBefore?'신청 가능':parentManAgeP>=60?'조건부 가능 ⚠️':'신청 불가'} ok={!user.hadHouseBefore?true:parentManAgeP>=60?'warn':false} sub={!user.hadHouseBefore?'과거소유이력 없음 ✅':parentManAgeP>=60?'공고별 예외 적용 여부 확인 필요':'과거소유이력 있음 ❌'}/>
+          <Row label="청년 특공" val={pAge<19||pAge>39?'신청 불가 (나이)':!user.hadHouseBefore?'신청 가능':parentManAgeP>=60?'조건부 가능 ⚠️':'신청 불가'} ok={pAge>=19&&pAge<=39?(user.hadHouseBefore?parentManAgeP>=60?'warn':false:true):false} sub={`만 ${pAge}세 · 19~39세 + 과거소유이력 없어야 함`}/>
+          <Row label="무주택 기간" val={`${user.homelessYears||0}년`}/>
+          <Row label="부양가족" val={`${user.dependents||0}명`}/>
+          {user.parentHasHouse&&user.parentBirthYear&&(()=>{const now=new Date();const pma=now.getFullYear()-user.parentBirthYear-(now.getMonth()+1<(user.parentBirthMonth||1)?1:0);return <Row label="동거 부모 주택" val={`있음 (만 ${pma}세)`} ok={pma>=60} sub={pma>=60?'만 60세+ 예외 적용 가능':'예외 미적용'}/>;})()}
+        </div>
+
+        <div className="card">
+          <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}><IWallet c={14} col="var(--gold)"/><span style={{fontWeight:700,fontSize:13}}>소득 · 자산</span></div>
+          <Row label="월 소득" val={`${fmtN(user.monthlyIncome)}만원`}/>
+          <Row label="소득세 납부" val={`${user.incomeTaxYears||0}년`} ok={(user.incomeTaxYears||0)>=5} sub="특공 5년 이상 필요"/>
+          <Row label="가용 현금" val={`${fmtN(user.availableCash)}만원`}/>
+          <Row label="보유 부동산" val={`${fmtN(user.realEstateValue)}만원`}/>
+          <div style={{marginTop:10,padding:'11px',background:'var(--ink3)',borderRadius:9,border:'1px solid var(--line)'}}>
+            <div style={{fontSize:10,color:'var(--dust3)',marginBottom:7}}>도시근로자 소득 기준 ({fam}인 가구)</div>
+            {[[130,i130],[140,i140],[160,i160]].map(([p,ic])=>(
+              <div key={p} style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                <span style={{fontSize:10,color:'var(--dust2)'}}>{p}% 기준: {fmtN(ic.limit)}만원</span>
+                <span style={{fontSize:10,fontWeight:700,color:ic.ok?'var(--jade)':'var(--ruby)'}}>{ic.ok?'✅ 충족':'❌ 초과'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}><IBook c={14} col="var(--sky2)"/><span style={{fontWeight:700,fontSize:13}}>청약통장</span></div>
+          <Row label="가입 기간" val={`${user.savingsYears||0}년 ${user.savingsMonths||0}개월`}/>
+          <Row label="납입 횟수" val={`${user.savingsCount||0}회`} ok={(user.savingsCount||0)>=12} sub="1순위 12회↑, 청년특공 6회↑"/>
+          <Row label="공공용 납입총액" val={`${fmtN(user.savingsTotalAmount)}만원`}/>
+          <Row label="구매력 상한" val={`${(((user.availableCash||0)+(user.targetLoanAmount||0))/10000).toFixed(2)}억원`} sub="가용현금 + 목표 대출 금액"/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   SETTINGS PAGE
+═══════════════════════════════════════════════ */
+function SettingsPage({apiKey,onKeySet,user,onUserUpdate}){
+  const [tmpK,setTmpK]=useState(apiKey);
+  const [showK,setShowK]=useState(false);
+  const [kSaved,setKSaved]=useState(false);
+  const [pSaved,setPSaved]=useState(false);
+  const [lu,setLu]=useState({...user});
+  const setU=(k,v)=>setLu(u=>({...u,[k]:v}));
+  const now=new Date();
+  const pma=lu.parentBirthYear?(now.getFullYear()-lu.parentBirthYear-(now.getMonth()+1<(lu.parentBirthMonth||1)?1:0)):0;
+  const sCnt=s=>lu.interestRegions.filter(r=>r.startsWith(s+' ')).length;
+  const togD=(s,d)=>{const r=s+' '+d;setU('interestRegions',lu.interestRegions.includes(r)?lu.interestRegions.filter(x=>x!==r):[...lu.interestRegions,r]);};
+  const clrSido=s=>setU('interestRegions',lu.interestRegions.filter(r=>!r.startsWith(s+' ')));
+  const allSelS=s=>(DISTRICTS[s]||[]).every(d=>lu.interestRegions.includes(s+' '+d));
+  const togAllS=s=>{if(allSelS(s)){clrSido(s);}else{const ta=(DISTRICTS[s]||[]).map(d=>s+' '+d).filter(r=>!lu.interestRegions.includes(r));setU('interestRegions',[...lu.interestRegions,...ta]);}};
+  const saveKey=()=>{onKeySet(tmpK.trim());setKSaved(true);setTimeout(()=>setKSaved(false),2000);};
+  const saveProfile=()=>{onUserUpdate(lu);setPSaved(true);setTimeout(()=>setPSaved(false),2000);};
+
+  return (
+    <div style={{padding:28,maxWidth:680,margin:'0 auto'}}>
+      <div style={{fontSize:20,fontWeight:700,marginBottom:24}}>설정</div>
+
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:14}}><IKey c={15} col="var(--sky)"/><span style={{fontWeight:700,fontSize:14}}>Claude API 키</span></div>
+        <div style={{fontSize:12,color:'var(--dust2)',lineHeight:1.7,marginBottom:14}}>AI 자격 분석·대출 계산·챗봇 기능에 사용됩니다. 키는 브라우저 로컬스토리지에만 저장되며, 서버로 전송되지 않습니다.</div>
+        <div className="fi" style={{marginBottom:10}}>
+          <label className="fl">API 키 (sk-ant-...)</label>
+          <div style={{position:'relative'}}>
+            <input className="inp" type={showK?'text':'password'} placeholder="sk-ant-api03-..." value={tmpK} onChange={e=>setTmpK(e.target.value)} style={{paddingRight:42}}/>
+            <button onClick={()=>setShowK(s=>!s)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'var(--dust3)',padding:4,cursor:'pointer'}}>
+              {showK?<IEyeOff c={14}/>:<IEye c={14}/>}
+            </button>
+          </div>
+          <span className="fh"><a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:'var(--sky)'}}>console.anthropic.com</a>에서 발급 · Claude Sonnet 사용</span>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-sky btn-sm" onClick={saveKey}>
+            {kSaved?<><ICheck c={13}/>저장됨</>:'저장'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>{if(confirm('API 키를 삭제하면 키 입력 화면으로 돌아갑니다.')){onKeySet('');}}} style={{color:'var(--dust3)'}}>
+            키 변경
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:18}}><IUser c={15} col="var(--sky)"/><span style={{fontWeight:700,fontSize:14}}>프로필 수정</span></div>
+
+        <div style={{fontSize:11,fontWeight:700,color:'var(--dust3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,paddingBottom:6,borderBottom:'1px solid var(--line)'}}>기본 정보</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+          <div className="fi" style={{margin:0}}><label className="fl">출생연도</label><input className="inp" type="number" min={1950} max={2010} value={lu.birthYear} onChange={e=>setU('birthYear',+e.target.value)}/><span className="fh">만 {now.getFullYear()-lu.birthYear}세</span></div>
+          <div className="fi" style={{margin:0}}><label className="fl">혼인 여부</label><div className="choice-row"><CB label="미혼" active={!lu.married} onClick={()=>setU('married',false)}/><CB label="기혼" active={lu.married} onClick={()=>setU('married',true)}/></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">거주 시/도</label><select className="inp" value={lu.sido} onChange={e=>{const s=e.target.value;const sorted=[...(DISTRICTS[s]||[])].sort((a,b)=>a.localeCompare(b,'ko'));setU('sido',s);setU('sigungu',sorted[0]||'');}}>{SIDO.map(s=><option key={s}>{s}</option>)}</select></div>
+          <div className="fi" style={{margin:0}}><label className="fl">시/군/구</label><select className="inp" value={lu.sigungu} onChange={e=>setU('sigungu',e.target.value)}>{[...(DISTRICTS[lu.sido]||[])].sort((a,b)=>a.localeCompare(b,'ko')).map(d=><option key={d}>{d}</option>)}</select></div>
+        </div>
+
+        <div style={{fontSize:11,fontWeight:700,color:'var(--dust3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,paddingBottom:6,borderBottom:'1px solid var(--line)'}}>세대·주택</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:6}}>
+          <div className="fi" style={{margin:0}}><label className="fl">세대주 여부</label><div className="choice-row"><CB label="세대주" active={lu.isHouseholder} onClick={()=>setU('isHouseholder',true)}/><CB label="세대원" active={!lu.isHouseholder} onClick={()=>setU('isHouseholder',false)}/></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">현재 주택 소유</label><div className="choice-row"><CB label="무주택" active={lu.houseOwnership==='none'} onClick={()=>setU('houseOwnership','none')}/><CB label="1주택" active={lu.houseOwnership==='one'} onClick={()=>setU('houseOwnership','one')}/><CB label="다주택" active={lu.houseOwnership==='multi'} onClick={()=>setU('houseOwnership','multi')}/></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">과거 주택 소유</label><div className="choice-row"><CB label="없음" active={!lu.hadHouseBefore} onClick={()=>setU('hadHouseBefore',false)}/><CB label="있음" active={lu.hadHouseBefore} onClick={()=>setU('hadHouseBefore',true)}/></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">무주택 기간</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} max={30} value={lu.homelessYears} onChange={e=>setU('homelessYears',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>년</span></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">부양가족 수</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} max={10} value={lu.dependents} onChange={e=>setU('dependents',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>명</span></div></div>
+        </div>
+        {lu.houseOwnership!=='none'&&<div style={{marginBottom:14,padding:'10px 12px',background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.15)',borderRadius:8}}>
+          <div style={{fontSize:11,fontWeight:600,color:'var(--sky)',marginBottom:8}}>동거 부모 생년월일 (만 60세+ 예외)</div>
+          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            <input className="inp" type="number" min={1930} max={2000} placeholder="출생연도" value={lu.parentBirthYear||''} onChange={e=>setU('parentBirthYear',+e.target.value)} style={{width:90,fontSize:12}}/>
+            <span style={{fontSize:11,color:'var(--dust2)'}}>년</span>
+            <select className="inp" value={lu.parentBirthMonth||1} onChange={e=>setU('parentBirthMonth',+e.target.value)} style={{width:70,fontSize:12}}>{[1,2,3,4,5,6,7,8,9,10,11,12].map(m=><option key={m} value={m}>{m}월</option>)}</select>
+            {lu.parentBirthYear&&<span style={{fontSize:11,fontWeight:700,color:pma>=60?'var(--jade)':'var(--dust3)'}}>{pma>=60?`✅ 만 ${pma}세 — 예외 적용 가능`:`만 ${pma}세`}</span>}
+          </div>
+        </div>}
+
+        <div style={{fontSize:11,fontWeight:700,color:'var(--dust3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,paddingBottom:6,borderBottom:'1px solid var(--line)'}}>소득·자산</div>
+        <div style={{marginBottom:10,padding:'10px 12px',background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.15)',borderRadius:8}}>
+          <label className="fl" style={{marginBottom:7}}>공공주택 청약 관심 여부</label>
+          <div className="choice-row"><CB label="관심 있음" active={lu.interestedInPublic!==false} onClick={()=>setU('interestedInPublic',true)}/><CB label="민영주택만" active={lu.interestedInPublic===false} onClick={()=>setU('interestedInPublic',false)}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:6}}>
+          <div className="fi" style={{margin:0}}><label className="fl">가구 월평균 소득 (세전)</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} value={lu.monthlyIncome} onChange={e=>setU('monthlyIncome',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>만원</span></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">가용 현금</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} value={lu.availableCash} onChange={e=>setU('availableCash',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>만원</span></div></div>
+          {lu.interestedInPublic!==false&&<>
+            <div className="fi" style={{margin:0}}><label className="fl">보유 부동산 가액</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} value={lu.realEstateValue} onChange={e=>setU('realEstateValue',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>만원</span></div></div>
+            <div className="fi" style={{margin:0}}><label className="fl">본인+부모 총자산</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} value={lu.totalAsset} onChange={e=>setU('totalAsset',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>만원</span></div></div>
+          </>}
+          <div className="fi" style={{margin:0}}><label className="fl">재직 여부</label><div className="choice-row"><CB label="재직 중" active={lu.isWorking} onClick={()=>setU('isWorking',true)}/><CB label="미재직/자영업" active={!lu.isWorking} onClick={()=>setU('isWorking',false)}/></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">소득세 납부 기간</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} max={30} value={lu.incomeTaxYears} onChange={e=>setU('incomeTaxYears',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>년</span></div></div>
+        </div>
+
+        <div style={{fontSize:11,fontWeight:700,color:'var(--dust3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,paddingBottom:6,borderBottom:'1px solid var(--line)'}}>청약통장·예산·대출</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+          <div className="fi" style={{margin:0}}><label className="fl">가입 기간</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} max={30} value={lu.savingsYears} onChange={e=>setU('savingsYears',+e.target.value)} style={{width:60}}/><span style={{fontSize:11,color:'var(--dust2)'}}>년</span><input className="inp" type="number" min={0} max={11} value={lu.savingsMonths} onChange={e=>setU('savingsMonths',+e.target.value)} style={{width:60}}/><span style={{fontSize:11,color:'var(--dust2)'}}>개월</span></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">총 납입 횟수</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} value={lu.savingsCount} onChange={e=>setU('savingsCount',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>회</span></div></div>
+          <div className="fi" style={{margin:0}}><label className="fl">목표 대출 금액 상한</label><div style={{display:'flex',gap:5,alignItems:'center'}}><input className="inp" type="number" min={0} value={lu.targetLoanAmount||0} onChange={e=>setU('targetLoanAmount',+e.target.value)} style={{flex:1}}/><span style={{fontSize:11,color:'var(--dust2)'}}>만원</span></div></div>
+        </div>
+
+        <div style={{fontSize:11,fontWeight:700,color:'var(--dust3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,paddingBottom:6,borderBottom:'1px solid var(--line)'}}>관심 지역 · 목표 분양가</div>
+        {lu.interestRegions.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:10}}>
+          {lu.interestRegions.map(r=>(
+            <span key={r} style={{display:'inline-flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:999,fontSize:11,background:'rgba(74,144,245,.15)',border:'1px solid rgba(74,144,245,.3)',color:'var(--sky)'}}>
+              {r}<button onClick={()=>setU('interestRegions',lu.interestRegions.filter(x=>x!==r))} style={{color:'var(--sky)',opacity:.7,fontSize:12,lineHeight:1}}>×</button>
+            </span>
+          ))}
+          <button onClick={()=>setU('interestRegions',[])} style={{fontSize:11,color:'var(--dust3)',padding:'3px 8px',borderRadius:999,border:'1px solid var(--line)',background:'var(--ink3)',cursor:'pointer'}}>전체 해제</button>
+        </div>}
+        <RegionMap
+          selected={lu.interestRegions}
+          onToggleDistrict={(s,d)=>togD(s,d)}
+          onToggleAll={s=>togAllS(s)}
+        />
+        {(()=>{const tb=((lu.availableCash||0)+(lu.targetLoanAmount||0));return tb>0&&(<div style={{marginTop:8,padding:'8px 12px',background:'rgba(74,144,245,.05)',border:'1px solid rgba(74,144,245,.15)',borderRadius:8,fontSize:11,color:'var(--dust2)',lineHeight:1.8}}>구매력 상한(매칭 기준): 가용현금 {fmtN(lu.availableCash||0)}만 + 대출상한 {fmtN(lu.targetLoanAmount||0)}만 = <strong style={{color:'var(--sky)'}}>총 {(tb/10000).toFixed(2)}억원</strong><br/><span style={{color:'var(--dust3)',fontSize:10}}>대출 계획 섹션의 가용현금·목표 대출 금액 상한을 수정하면 자동 반영됩니다</span></div>);})()}
+        <button className="btn btn-sky" onClick={saveProfile} style={{width:'100%',justifyContent:'center',marginTop:4}}>
+          {pSaved?<><ICheck c={14}/>저장됨</>:<><ICheck c={14}/>프로필 저장</>}
+        </button>
+      </div>
+
+      <div className="card" style={{marginBottom:16,background:'rgba(74,144,245,.04)',borderColor:'rgba(74,144,245,.2)'}}>
+        <div style={{fontWeight:700,fontSize:13,color:'var(--sky)',marginBottom:8}}>⚠️ 면책 고지</div>
+        <div style={{fontSize:11,color:'var(--dust2)',lineHeight:1.8}}>
+          본 서비스의 AI 자격 판단 결과는 참고용 정보입니다. AI의 분석은 입력된 정보를 기반으로 하며 실제 자격 요건과 다를 수 있습니다.<br/><br/>
+          최종 자격 여부는 반드시 <a href="https://applyhome.co.kr" target="_blank" rel="noreferrer" style={{color:'var(--sky)'}}>청약홈(applyhome.co.kr)</a> 또는 전문가를 통해 직접 확인하세요.<br/><br/>
+          본 서비스는 어떠한 법적 책임도 지지 않으며, 최종 판단과 책임은 사용자 본인에게 있습니다.
+        </div>
+      </div>
+
+      <div className="card" style={{borderColor:'rgba(240,96,96,.25)'}}>
+        <div style={{fontWeight:700,fontSize:13,color:'var(--ruby)',marginBottom:7}}>위험 구역</div>
+        <div style={{fontSize:12,color:'var(--dust2)',marginBottom:12}}>모든 데이터(프로필, 즐겨찾기, 설정)가 삭제되고 처음부터 다시 시작합니다.</div>
+        <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm('전체 초기화하시겠습니까?')){localStorage.clear();window.location.reload();}}}>
+          <ITrash c={13}/>전체 초기화
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   APP ROOT
+═══════════════════════════════════════════════ */
+function App(){
+  const [user,setUser]=useState(S.getUser());
+  const [apiKey,setApiKey]=useState(S.getKey());
+  const [page,setPage]=useState('home');
+  const [detailId,setDetailId]=useState(null);
+
+  // 청약 공고 데이터 상태
+  const [announcements,setAnnouncements]=useState(DUMMY_FALLBACK);
+  const [dataSource,setDataSource]=useState('offline'); // 'loading'|'api'|'offline'
+  const [dataError,setDataError]=useState('');
+
+  const setKey=k=>{S.setKey(k);setApiKey(k);};
+  const updateUser=d=>{S.setUser(d);setUser(d);};
+
+  // 청약홈 API 데이터 로드 — hooks는 조건부 return 이전에 선언해야 함
+  useEffect(()=>{
+    if(!user||!apiKey) return;
+
+    // 로컬 캐시 확인 (1시간 내 데이터면 재사용)
+    const cached=S.getAnnCache();
+    if(cached&&cached.data&&cached.data.length>0){
+      setAnnouncements(cached.data);
+      setDataSource('api');
+      return;
+    }
+
+    setDataSource('loading');
+    fetch('/api/announcements')
+      .then(r=>r.json())
+      .then(res=>{
+        if(res.ok&&res.data&&res.data.length>0){
+          setAnnouncements(res.data);
+          setDataSource('api');
+          S.setAnnCache(res.data);
+          setDataError('');
+        } else {
+          // API 키 미설정이거나 0건 → 더미 유지
+          setDataSource('offline');
+          setDataError(res.error||'API 데이터 없음 — 더미 데이터로 동작 중');
+        }
+      })
+      .catch(e=>{
+        // 서버 미실행 시 조용히 더미 폴백
+        setDataSource('offline');
+        setDataError('서버 연결 불가 — 더미 데이터로 동작 중 (server.js를 실행하세요)');
+      });
+  },[user,apiKey]);
+
+  // hook 이후 조건부 렌더링 — React hooks 규칙 준수
+  // 1단계: Claude API 키 없으면 키 입력 화면
+  if(!apiKey) return <ApiKeyGate onComplete={k=>{S.setKey(k);setApiKey(k);}}/>;
+
+  // 2단계: 프로필 없으면 온보딩
+  if(!user) return <Onboarding onComplete={d=>{S.setUser(d);setUser(d);}}/>;
+
+  // 데이터 로딩 오버레이 (최초 API 호출 중일 때만)
+  const loadingOverlay=dataSource==='loading'?(
+    <div style={{position:'fixed',bottom:20,right:20,background:'var(--ink2)',border:'1px solid var(--line)',borderRadius:12,padding:'10px 16px',display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--dust2)',zIndex:99}}>
+      <ILoader c={14} col="var(--sky)"/>청약홈 공고 불러오는 중…
+    </div>
+  ):null;
+
+  // API 키 미설정 알림 배너 (설정 페이지 외)
+  const apiBanner=(dataSource==='offline'&&page!=='settings')?(
+    <div style={{position:'fixed',bottom:20,right:20,background:'rgba(240,184,64,.08)',border:'1px solid rgba(240,184,64,.2)',borderRadius:12,padding:'10px 16px',fontSize:11,color:'var(--gold)',zIndex:99,maxWidth:280,lineHeight:1.6}}>
+      📡 더미 데이터 표시 중<br/>
+      <span style={{color:'var(--dust3)'}}>{dataError}</span>
+    </div>
+  ):null;
+
+  const renderPage=()=>{
+    switch(page){
+      case'home':   return <Home user={user} apiKey={apiKey} setPage={setPage} setDid={setDetailId} announcements={announcements}/>;
+      case'list':   return <ListPage user={user} setPage={setPage} setDid={setDetailId} announcements={announcements} dataSource={dataSource}/>;
+      case'matched':return <ListPage user={user} setPage={setPage} setDid={setDetailId} announcements={announcements} dataSource={dataSource} matchedOnly={true}/>;
+      case'detail': return <DetailPage annId={detailId} user={user} apiKey={apiKey} setPage={setPage} announcements={announcements}/>;
+      case'profile':return <ProfilePage user={user} setPage={setPage}/>;
+      case'settings':return <SettingsPage apiKey={apiKey} onKeySet={setKey} user={user} onUserUpdate={updateUser}/>;
+      default:      return <Home user={user} apiKey={apiKey} setPage={setPage} setDid={setDetailId} announcements={announcements}/>;
+    }
+  };
+
+  return (
+    <Layout page={page} setPage={setPage} user={user} apiKey={apiKey} onKeySet={setKey}>
+      {renderPage()}
+      {loadingOverlay}
+      {apiBanner}
+    </Layout>
+  );
+}
+
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e){return{err:e};}
+  componentDidCatch(e,info){console.error('React ErrorBoundary caught:',e,info);}
+  render(){
+    if(this.state.err)return(
+      <div style={{background:'#fff',color:'#c00',padding:32,fontFamily:'sans-serif',fontSize:14,lineHeight:1.8,maxWidth:600,margin:'40px auto',borderRadius:8,border:'1px solid #f88'}}>
+        <strong>컴포넌트 렌더링 오류</strong><br/><br/>
+        {this.state.err.message}<br/>
+        <pre style={{fontSize:11,color:'#888',whiteSpace:'pre-wrap',marginTop:8}}>{this.state.err.stack}</pre>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);
+</script>
+</body>
+</html>
