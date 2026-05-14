@@ -3,6 +3,8 @@ const express  = require('express');
 const axios    = require('axios');
 const path     = require('path');
 const cron     = require('node-cron');
+let puppeteer;
+try { puppeteer = require('puppeteer'); } catch { console.warn('[puppeteer] 미설치'); }
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -10,6 +12,8 @@ const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SEC) || 86400) * 1000;
 
 // ── 인메모리 캐시 ─────────────────────────────────────────
 let _cache = null; // { data: [...], ts: Date.now() }
+const _annContentCache = new Map(); // url → { content, ts }
+const ANN_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 // ── 청약홈 API 기본값 ─────────────────────────────────────
 // data.go.kr 서비스: 한국부동산원_청약홈 분양정보 조회 서비스 (15098547)
@@ -242,6 +246,57 @@ app.get('/api/announcements', async (req, res) => {
       : err.message;
     console.error('[API Error]', errMsg);
     res.status(502).json({ ok: false, error: errMsg, data: [] });
+  }
+});
+
+// 공고문 내용 스크래핑 (puppeteer)
+app.get('/api/announcement-content', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ ok: false, content: '' });
+
+  const cached = _annContentCache.get(url);
+  if (cached && Date.now() - cached.ts < ANN_CACHE_TTL) {
+    return res.json({ ok: true, cached: true, content: cached.content });
+  }
+
+  if (!puppeteer) {
+    return res.json({ ok: false, content: '', error: 'puppeteer 미설치' });
+  }
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox', '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', '--disable-gpu',
+        '--single-process', '--no-zygote',
+      ],
+    });
+    const page = await browser.newPage();
+    await page.setDefaultNavigationTimeout(25000);
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.goto(url, { waitUntil: 'networkidle0' });
+
+    const content = await page.evaluate(() => {
+      const text = document.body.innerText || '';
+      // 무주택세대구성원 조항 주변 2500자 추출
+      const idx = text.indexOf('무주택세대구성원');
+      if (idx !== -1) return text.substring(Math.max(0, idx - 300), idx + 2500);
+      // 직계존속 관련 조항 검색
+      const idx2 = text.indexOf('직계존속');
+      if (idx2 !== -1) return text.substring(Math.max(0, idx2 - 300), idx2 + 2500);
+      return text.slice(0, 3000);
+    });
+
+    _annContentCache.set(url, { content, ts: Date.now() });
+    console.log(`[공고문] 스크래핑 완료: ${url.slice(0, 60)}...`);
+    res.json({ ok: true, cached: false, content });
+  } catch (err) {
+    console.error('[공고문 스크래핑 오류]', err.message);
+    res.status(500).json({ ok: false, content: '', error: err.message });
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 });
 
