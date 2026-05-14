@@ -12,8 +12,8 @@ let _cache = null; // { data: [...], ts: Date.now() }
 
 // ── 청약홈 API 기본값 ─────────────────────────────────────
 // data.go.kr 서비스: 한국부동산원_청약홈 분양정보 조회 서비스 (15098547)
-// 기관코드 B552459, 운영 Base URL:
-const APT_API_BASE = 'https://apis.data.go.kr/B552459/apt';
+// Base URL: api.odcloud.kr/api  서비스명: ApplyhomeInfoDetailSvc
+const APT_API_BASE = 'https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1';
 
 /* ═══════════════════════════════════════════════
    헬퍼 함수
@@ -101,29 +101,16 @@ function isRegulated(sido, sigungu) {
 
 /* ═══════════════════════════════════════════════
    API 응답 → 앱 데이터 모델 변환
+   새 API: ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail
+   응답 구조: { data: [...], totalCount, page, perPage }
+   날짜 필드가 이미 YYYY-MM-DD 형식
 ═══════════════════════════════════════════════ */
 
-// 주택형별 아이템 하나를 house type 포맷으로 변환
-function toHouseType(item) {
-  return {
-    t:     item.HOUSE_TY || item.HOUSE_TYPE || '?',
-    area:  toFloat(item.SUPLY_AR || item.SUPLY_AREA),
-    price: toInt(item.LTTOT_TOP_AMOUNT || item.SALE_PRICE || 0),
-    units: toInt(item.SUPLY_HSHLDCO || item.SUPLY_HOUSEHOLD_COUNT || 0),
-  };
-}
-
-// 같은 PBLANC_NO로 묶인 항목들을 하나의 공고 객체로 변환
-// (청약홈 API는 주택형마다 행이 분리되는 구조)
-function transformGroup(items) {
-  if (!items.length) return null;
-  const f = items[0]; // 공통 정보는 첫 행에서
-
+function transformItem(f) {
   const sido    = parseSido(f.SUBSCRPT_AREA_CODE_NM || '', f.HSSPLY_ADRES || '');
   const sigungu = parseSigungu(f.HSSPLY_ADRES || '');
-  const type    = parseType(f.HOUSE_SECD);
+  const type    = f.HOUSE_DTL_SECD === '03' ? '공공' : '민영';
 
-  // 태그 생성
   const tags = [sido];
   if (type === '공공') tags.push('공공분양');
   if (isRegulated(sido, sigungu)) tags.push('규제지역');
@@ -132,40 +119,38 @@ function transformGroup(items) {
     if (f.BSNS_MBY_NM.includes('SH') || f.BSNS_MBY_NM.includes('서울주택')) tags.push('SH');
   }
 
-  // 주택형 정보 — 여러 행이 있으면 각 행을 house type으로 처리
-  // 단일 행이지만 HOUSE_TY 필드가 있는 경우도 처리
-  const houseTypes = items
-    .map(toHouseType)
-    .filter(h => h.t !== '?');
+  // MVN_PREARNGE_YM: "202908" → "2029-08"
+  const moveIn = f.MVN_PREARNGE_YM
+    ? `${String(f.MVN_PREARNGE_YM).slice(0,4)}-${String(f.MVN_PREARNGE_YM).slice(4,6)}`
+    : '';
 
   return {
-    id:         f.PBLANC_NO || f.HOUSE_MANAGE_NO || String(Date.now() + Math.random()),
-    name:       f.HOUSE_NM  || '(주택명 미제공)',
+    id:         f.HOUSE_MANAGE_NO || f.PBLANC_NO || String(Date.now() + Math.random()),
+    name:       f.HOUSE_NM || '(주택명 미제공)',
     location: {
       sido,
       sigungu,
       address: f.HSSPLY_ADRES || `${sido} ${sigungu}`,
     },
     type,
-    totalUnits: toInt(f.TOTL_SUPLY_HSHLDCO),
-    buildings:  toInt(f.BLDN_CNT),
-    maxFloor:   toInt(f.HGHST_FLRP_CNT_LWST || f.HGHST_FLRP_CNT || 0),
+    totalUnits: toInt(f.TOT_SUPLY_HSHLDCO),
+    buildings:  0,
+    maxFloor:   0,
     schedule: {
-      announcement: fmtDate(f.RCRIT_PBLANC_DE),
-      special:      fmtDate(f.SPSPLY_RCEPT_BGNDE),
-      general:      fmtDate(f.GNRL_RNK1_CRSPAREA_RCPTDE || f.GNRL_RCEPT_BGNDE),
-      winner:       fmtDate(f.PRZWNER_PRESNATN_DE),
-      contract:     fmtDate(f.CNTRCT_CNCLS_BGNDE),
-      moveIn:       fmtYM(f.MVN_PREARNGE_YM),
+      announcement: f.RCRIT_PBLANC_DE   || '',
+      special:      f.SPSPLY_RCEPT_BGNDE || '',
+      general:      f.GNRL_RNK1_CRSPAREA_RCPTDE || f.GNRL_RNK1_ETC_AREA_RCPTDE || '',
+      winner:       f.PRZWNER_PRESNATN_DE || '',
+      contract:     f.CNTRCT_CNCLS_BGNDE || '',
+      moveIn,
     },
     restrictions: {
       regulated: isRegulated(sido, sigungu),
-      resale:    toInt(f.PARCPRC_ULS_HOLD_PRID  || 0),
-      reapply:   toInt(f.RCNBLSCRNAT_HOLD_PRID   || 0),
-      residence: toInt(f.RESIDE_DUTY_PRID         || 0),
+      resale:    0,
+      reapply:   0,
+      residence: 0,
     },
-    houseTypes,
-    // 소득·자산 기준은 API 미제공 → 공고 유형별 법정 기본값
+    houseTypes: [],
     eligibility: {
       incomeFirst: type === '공공' ? 130 : 160,
       incomeYouth: type === '공공' ? 100 : 140,
@@ -174,48 +159,37 @@ function transformGroup(items) {
     },
     payment: { down: 10, mid: [], bal: 30 },
     tags,
+    url: f.PBLANC_URL || '',
   };
 }
 
 /* ═══════════════════════════════════════════════
    청약홈 API 호출
 ═══════════════════════════════════════════════ */
-function extractItems(responseData) {
-  // data.go.kr 표준 응답 구조 처리
-  const body  = responseData?.response?.body ?? responseData?.body ?? responseData;
-  const items = body?.items?.item ?? body?.item ?? [];
-  // API가 단건일 때 배열 대신 객체를 반환하는 경우 처리
-  return Array.isArray(items) ? items : (items ? [items] : []);
-}
-
 async function fetchFromAPI(apiKey) {
-  // 최근 60일 공고 수집 — 당일 기준으로 필터 없이 최신순 조회
-  const resp = await axios.get(`${APT_API_BASE}/getAPTLotOutDetail`, {
+  // 최근 90일 공고 수집
+  const past90 = new Date();
+  past90.setDate(past90.getDate() - 90);
+  const dateStr = past90.toISOString().slice(0, 10);
+
+  const resp = await axios.get(`${APT_API_BASE}/getAPTLttotPblancDetail`, {
     params: {
       serviceKey: apiKey,
-      pageNo:     1,
-      numOfRows:  100,
-      _type:      'json',    // JSON 응답 요청
+      page:       1,
+      perPage:    100,
+      'cond[RCRIT_PBLANC_DE::GTE]': dateStr,
     },
     timeout: 15000,
   });
 
-  const items = extractItems(resp.data);
-  if (!items.length) {
-    console.warn('[청약홈 API] 응답 항목 0건. 응답 구조 확인 필요:', JSON.stringify(resp.data).slice(0, 300));
+  const items = resp.data?.data;
+  if (!Array.isArray(items) || !items.length) {
+    console.warn('[청약홈 API] 응답 항목 0건. 응답:', JSON.stringify(resp.data).slice(0, 300));
     return [];
   }
 
-  // PBLANC_NO 기준으로 그룹핑 (주택형마다 행 분리 대응)
-  const groups = {};
-  for (const item of items) {
-    const key = item.PBLANC_NO || item.HOUSE_MANAGE_NO || '__single__';
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(item);
-  }
-
-  return Object.values(groups)
-    .map(transformGroup)
+  return items
+    .map(transformItem)
     .filter(Boolean)
     .sort((a, b) => (b.schedule.announcement || '').localeCompare(a.schedule.announcement || ''));
 }
