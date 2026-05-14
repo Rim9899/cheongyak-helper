@@ -167,31 +167,42 @@ function transformItem(f) {
    청약홈 API 호출
 ═══════════════════════════════════════════════ */
 async function fetchFromAPI(apiKey) {
-  // 최근 90일 공고 수집
-  const past90 = new Date();
-  past90.setDate(past90.getDate() - 90);
-  const dateStr = past90.toISOString().slice(0, 10);
+  // 3페이지(300건) 병렬 수집 후 서버에서 날짜 필터링
+  const pages = [1, 2, 3];
+  const responses = await Promise.all(
+    pages.map(page =>
+      axios.get(`${APT_API_BASE}/getAPTLttotPblancDetail`, {
+        params: { serviceKey: apiKey, page, perPage: 100 },
+        timeout: 15000,
+      }).then(r => r.data?.data || []).catch(() => [])
+    )
+  );
 
-  const resp = await axios.get(`${APT_API_BASE}/getAPTLttotPblancDetail`, {
-    params: {
-      serviceKey: apiKey,
-      page:       1,
-      perPage:    100,
-      'cond[RCRIT_PBLANC_DE::GTE]': dateStr,
-    },
-    timeout: 15000,
-  });
-
-  const items = resp.data?.data;
-  if (!Array.isArray(items) || !items.length) {
-    console.warn('[청약홈 API] 응답 항목 0건. 응답:', JSON.stringify(resp.data).slice(0, 300));
+  const allItems = responses.flat();
+  if (!allItems.length) {
+    console.warn('[청약홈 API] 응답 항목 0건.');
     return [];
   }
 
-  return items
+  // 접수 종료일이 오늘 이후이거나, 모집공고일이 최근 90일 이내인 공고만 유지
+  const today = new Date().toISOString().slice(0, 10);
+  const past90 = new Date();
+  past90.setDate(past90.getDate() - 90);
+  const past90Str = past90.toISOString().slice(0, 10);
+
+  const filtered = allItems.filter(f => {
+    const endde = f.RCEPT_ENDDE || '';
+    const announced = f.RCRIT_PBLANC_DE || '';
+    return (endde >= today) || (announced >= past90Str);
+  });
+
+  const result = (filtered.length ? filtered : allItems.slice(0, 100))
     .map(transformItem)
     .filter(Boolean)
     .sort((a, b) => (b.schedule.announcement || '').localeCompare(a.schedule.announcement || ''));
+
+  console.log(`[API] 전체 ${allItems.length}건 수집 → 필터 후 ${result.length}건`);
+  return result;
 }
 
 /* ═══════════════════════════════════════════════
