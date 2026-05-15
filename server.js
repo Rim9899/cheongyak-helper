@@ -5,6 +5,7 @@ const path       = require('path');
 const fs         = require('fs');
 const cron       = require('node-cron');
 const nodemailer = require('nodemailer');
+const webpush    = require('web-push');
 let puppeteer;
 try { puppeteer = require('puppeteer'); } catch { console.warn('[puppeteer] 미설치'); }
 
@@ -17,10 +18,22 @@ let _cache = null; // { data: [...], ts: Date.now() }
 const _annContentCache = new Map(); // url → { content, ts }
 const ANN_CACHE_TTL = 24 * 60 * 60 * 1000;
 
+// ── VAPID (웹 푸시) 설정 ───────────────────────────────────
+const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
+const VAPID_EMAIL   = process.env.VAPID_EMAIL || 'mailto:admin@example.com';
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
+  console.log('[VAPID] 웹 푸시 설정 완료');
+} else {
+  console.warn('[VAPID] VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY 미설정 — 푸시 비활성');
+}
+
 // ── 사용자 알림 데이터 ─────────────────────────────────────
 // Render 영구 디스크 사용 시 DATA_DIR=/data 환경변수로 지정
 const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SUBS_FILE  = path.join(DATA_DIR, 'subscriptions.json');
 
 function loadUsers() {
   try {
@@ -34,6 +47,20 @@ function saveUsers(users) {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
   } catch (e) { console.error('[사용자 저장 오류]', e.message); }
+}
+
+function loadSubs() {
+  try {
+    if (!fs.existsSync(SUBS_FILE)) return [];
+    return JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
+  } catch { return []; }
+}
+
+function saveSubs(subs) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SUBS_FILE, JSON.stringify(subs, null, 2), 'utf8');
+  } catch (e) { console.error('[구독 저장 오류]', e.message); }
 }
 
 // ── 매칭 로직 (프론트와 동일 기준) ───────────────────────
@@ -103,6 +130,42 @@ async function sendNotificationEmail(email, matches) {
     html,
   });
   return true;
+}
+
+// ── 웹 푸시 발송 ──────────────────────────────────────────
+async function sendPushNotifications(announcements) {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
+  const subs = loadSubs();
+  if (!subs.length) return;
+
+  const dead = [];
+  let updated = false;
+
+  for (const sub of subs) {
+    const newMatches = announcements.filter(ann =>
+      matchesUser(ann, sub.conditions) && !sub.notifiedIds.includes(ann.id)
+    );
+    if (!newMatches.length) continue;
+
+    const payload = JSON.stringify({
+      title: `청약도우미 — 새 공고 ${newMatches.length}건`,
+      body:  newMatches.slice(0, 3).map(a => a.name).join('\n'),
+      url:   '/',
+    });
+
+    try {
+      await webpush.sendNotification(sub.subscription, payload);
+      sub.notifiedIds.push(...newMatches.map(a => a.id));
+      console.log(`[푸시] 발송 ${newMatches.length}건`);
+      updated = true;
+    } catch (e) {
+      if (e.statusCode === 410 || e.statusCode === 404) dead.push(sub.subscription.endpoint);
+      console.error('[푸시 오류]', e.statusCode, e.message);
+    }
+  }
+
+  const finalSubs = dead.length ? subs.filter(s => !dead.includes(s.subscription.endpoint)) : subs;
+  if (updated || dead.length) saveSubs(finalSubs);
 }
 
 // ── 알림 발송 메인 ─────────────────────────────────────────
@@ -416,8 +479,40 @@ app.get('/api/announcements', async (req, res) => {
   }
 });
 
-// ── 알림 등록 / 해지 / 상태 ──────────────────────────────
+// ── 푸시 알림 라우트 ──────────────────────────────────────
 app.use(express.json());
+
+app.get('/api/push/vapid-public-key', (req, res) => {
+  if (!VAPID_PUBLIC) return res.status(503).json({ ok: false, error: 'VAPID 미설정' });
+  res.json({ ok: true, key: VAPID_PUBLIC });
+});
+
+app.post('/api/push/subscribe', (req, res) => {
+  const { subscription, conditions } = req.body;
+  if (!subscription?.endpoint) return res.status(400).json({ ok: false, error: 'subscription 없음' });
+  const subs = loadSubs();
+  const idx  = subs.findIndex(s => s.subscription.endpoint === subscription.endpoint);
+  const entry = {
+    subscription,
+    conditions: {
+      interestRegions: conditions?.interestRegions || [],
+      budgetLimit:     conditions?.budgetLimit     || 0,
+    },
+    notifiedIds:  idx >= 0 ? subs[idx].notifiedIds : [],
+    registeredAt: new Date().toISOString(),
+  };
+  if (idx >= 0) subs[idx] = entry; else subs.push(entry);
+  saveSubs(subs);
+  res.json({ ok: true });
+});
+
+app.delete('/api/push/unsubscribe', (req, res) => {
+  const { endpoint } = req.body;
+  saveSubs(loadSubs().filter(s => s.subscription.endpoint !== endpoint));
+  res.json({ ok: true });
+});
+
+// ── 이메일 알림 등록 / 해지 / 상태 ──────────────────────────────
 
 app.post('/api/notify/register', (req, res) => {
   const { email, conditions } = req.body;
@@ -549,6 +644,7 @@ app.listen(PORT, () => {
         _cache = { data, ts: Date.now() };
         console.log(`[스케줄러] 갱신 완료: ${data.length}건`);
         await sendNotifications(data);
+        await sendPushNotifications(data);
       } catch (err) {
         console.error('[스케줄러] 갱신 실패:', err.message);
       }

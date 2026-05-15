@@ -82,6 +82,7 @@ window.onerror=function(msg,src,line,col,err){
 </script>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useRef,useMemo,useCallback}=React;
+function urlBase64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(base64);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));}
 
 /* ═══════════════════════════════════════════════
    DATA
@@ -1631,30 +1632,45 @@ function SettingsPage({apiKey,onKeySet,user,onUserUpdate}){
   const [showK,setShowK]=useState(false);
   const [kSaved,setKSaved]=useState(false);
   const [pSaved,setPSaved]=useState(false);
-  const [nEmail,setNEmail]=useState(()=>localStorage.getItem('notifyEmail')||'');
-  const [nStatus,setNStatus]=useState('idle'); // idle | loading | registered | error
-  const [nMsg,setNMsg]=useState('');
+  const [pushStatus,setPushStatus]=useState('idle'); // idle | loading | subscribed | denied | unsupported
+  const [pushMsg,setPushMsg]=useState('');
   React.useEffect(()=>{
-    const saved=localStorage.getItem('notifyEmail');
-    if(!saved) return;
-    fetch(`/api/notify/status?email=${encodeURIComponent(saved)}`)
-      .then(r=>r.json()).then(d=>{ if(d.registered) setNStatus('registered'); }).catch(()=>{});
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)){setPushStatus('unsupported');return;}
+    if(Notification.permission==='denied'){setPushStatus('denied');return;}
+    navigator.serviceWorker.ready.then(reg=>reg.pushManager.getSubscription()).then(sub=>{
+      if(sub) setPushStatus('subscribed');
+    }).catch(()=>{});
   },[]);
-  const registerNotify=async()=>{
-    if(!nEmail||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nEmail)){setNMsg('유효한 이메일을 입력하세요.');return;}
-    setNStatus('loading');
+  const subscribePush=async()=>{
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)){setPushMsg('이 브라우저는 푸시 알림을 지원하지 않습니다.');return;}
+    setPushStatus('loading');setPushMsg('');
     try{
-      const r=await fetch('/api/notify/register',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({email:nEmail,conditions:{interestRegions:lu.interestRegions,budgetLimit:lu.budgetLimit||0}})});
-      const d=await r.json();
-      if(d.ok){localStorage.setItem('notifyEmail',nEmail);setNStatus('registered');setNMsg('');}
-      else{setNStatus('error');setNMsg(d.error||'등록 실패');}
-    }catch(e){setNStatus('error');setNMsg('서버 오류');}
+      const kr=await fetch('/api/push/vapid-public-key');
+      const kd=await kr.json();
+      if(!kd.ok){setPushStatus('idle');setPushMsg('서버 VAPID 키 미설정');return;}
+      const perm=await Notification.requestPermission();
+      if(perm!=='granted'){setPushStatus('denied');setPushMsg('알림 권한이 거부되었습니다.');return;}
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.subscribe({
+        userVisibleOnly:true,
+        applicationServerKey:urlBase64ToUint8Array(kd.key),
+      });
+      await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({subscription:sub.toJSON(),conditions:{interestRegions:lu.interestRegions,budgetLimit:lu.budgetLimit||0}})});
+      setPushStatus('subscribed');setPushMsg('');
+    }catch(e){setPushStatus('idle');setPushMsg('알림 등록 실패: '+e.message);}
   };
-  const unregisterNotify=async()=>{
-    if(!confirm('이메일 알림 수신을 해지하시겠습니까?')) return;
-    await fetch('/api/notify/unregister',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:nEmail})});
-    localStorage.removeItem('notifyEmail');setNStatus('idle');setNEmail('');
+  const unsubscribePush=async()=>{
+    if(!confirm('푸시 알림을 해제하시겠습니까?'))return;
+    try{
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.getSubscription();
+      if(sub){
+        await fetch('/api/push/unsubscribe',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
+        await sub.unsubscribe();
+      }
+      setPushStatus('idle');
+    }catch(e){setPushMsg('해제 오류: '+e.message);}
   };
   const [lu,setLu]=useState({...user});
   const setU=(k,v)=>setLu(u=>({...u,[k]:v}));
@@ -1768,29 +1784,28 @@ function SettingsPage({apiKey,onKeySet,user,onUserUpdate}){
       </div>
 
       <div className="card" style={{marginBottom:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:12}}><IBell c={15} col="var(--sky)"/><span style={{fontWeight:700,fontSize:14}}>이메일 알림</span></div>
-        <div style={{fontSize:12,color:'var(--dust2)',lineHeight:1.7,marginBottom:14}}>매일 오전 8시 공고 갱신 시 등록 조건(관심지역·목표분양가)에 맞는 신규 공고가 있으면 이메일로 알려드립니다.</div>
-        {nStatus!=='registered'?(
+        <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:12}}><IBell c={15} col="var(--sky)"/><span style={{fontWeight:700,fontSize:14}}>푸시 알림</span></div>
+        <div style={{fontSize:12,color:'var(--dust2)',lineHeight:1.7,marginBottom:14}}>매일 오전 8시 공고 갱신 시 등록 조건(관심지역·목표분양가)에 맞는 신규 공고가 있으면 기기로 바로 알려드립니다.</div>
+        {pushStatus==='unsupported'&&<div style={{fontSize:12,color:'var(--dust3)',padding:'10px 12px',background:'rgba(255,255,255,.04)',borderRadius:8}}>이 브라우저는 푸시 알림을 지원하지 않습니다.<br/><span style={{fontSize:11}}>Chrome, Edge, Firefox, 또는 홈 화면에 추가 후 사용하세요.</span></div>}
+        {pushStatus==='denied'&&<div style={{fontSize:12,color:'var(--ruby)',padding:'10px 12px',background:'rgba(240,96,96,.06)',border:'1px solid rgba(240,96,96,.2)',borderRadius:8}}>알림 권한이 차단됨 — 브라우저 설정에서 이 사이트의 알림 권한을 허용해 주세요.</div>}
+        {(pushStatus==='idle'||pushStatus==='loading')&&pushStatus!=='denied'&&pushStatus!=='unsupported'&&(
           <>
-            <div className="fi" style={{marginBottom:10}}>
-              <label className="fl">이메일 주소</label>
-              <input className="inp" type="email" placeholder="example@gmail.com" value={nEmail} onChange={e=>setNEmail(e.target.value)} disabled={nStatus==='loading'}/>
-            </div>
-            {nMsg&&<div style={{fontSize:11,color:'var(--ruby)',marginBottom:8}}>{nMsg}</div>}
-            <button className="btn btn-sky btn-sm" onClick={registerNotify} disabled={nStatus==='loading'}>
-              {nStatus==='loading'?<><ILoader c={12}/>등록 중…</>:<><IBell c={12}/>알림 신청</>}
+            {pushMsg&&<div style={{fontSize:11,color:'var(--ruby)',marginBottom:8}}>{pushMsg}</div>}
+            <button className="btn btn-sky btn-sm" onClick={subscribePush} disabled={pushStatus==='loading'}>
+              {pushStatus==='loading'?<><ILoader c={12}/>등록 중…</>:<><IBell c={12}/>알림 켜기</>}
             </button>
           </>
-        ):(
+        )}
+        {pushStatus==='subscribed'&&(
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',background:'rgba(16,185,129,.06)',border:'1px solid rgba(16,185,129,.2)',borderRadius:8}}>
             <div>
-              <div style={{fontSize:12,fontWeight:700,color:'var(--jade)'}}>✅ 알림 등록됨</div>
-              <div style={{fontSize:11,color:'var(--dust2)',marginTop:2}}>{nEmail}</div>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--jade)'}}>✅ 푸시 알림 켜짐</div>
+              <div style={{fontSize:11,color:'var(--dust2)',marginTop:2}}>조건에 맞는 공고 발생 시 알림 발송</div>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={unregisterNotify} style={{color:'var(--dust3)',fontSize:11}}>해지</button>
+            <button className="btn btn-ghost btn-sm" onClick={unsubscribePush} style={{color:'var(--dust3)',fontSize:11}}>끄기</button>
           </div>
         )}
-        <div style={{fontSize:10,color:'var(--dust3)',marginTop:10,lineHeight:1.6}}>※ 조건 변경 시 프로필 저장 후 알림을 재등록하세요.</div>
+        <div style={{fontSize:10,color:'var(--dust3)',marginTop:10,lineHeight:1.6}}>※ 조건 변경 시 알림을 끄고 다시 켜면 최신 조건이 반영됩니다.</div>
       </div>
 
       <div className="card" style={{marginBottom:16,background:'rgba(74,144,245,.04)',borderColor:'rgba(74,144,245,.2)'}}>
