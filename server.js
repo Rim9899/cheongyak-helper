@@ -1,8 +1,10 @@
 require('dotenv').config();
-const express  = require('express');
-const axios    = require('axios');
-const path     = require('path');
-const cron     = require('node-cron');
+const express    = require('express');
+const axios      = require('axios');
+const path       = require('path');
+const fs         = require('fs');
+const cron       = require('node-cron');
+const nodemailer = require('nodemailer');
 let puppeteer;
 try { puppeteer = require('puppeteer'); } catch { console.warn('[puppeteer] 미설치'); }
 
@@ -14,6 +16,117 @@ const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SEC) || 86400) * 1000;
 let _cache = null; // { data: [...], ts: Date.now() }
 const _annContentCache = new Map(); // url → { content, ts }
 const ANN_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+// ── 사용자 알림 데이터 ─────────────────────────────────────
+// Render 영구 디스크 사용 시 DATA_DIR=/data 환경변수로 지정
+const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+
+function loadUsers() {
+  try {
+    if (!fs.existsSync(USERS_FILE)) return [];
+    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  } catch { return []; }
+}
+
+function saveUsers(users) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+  } catch (e) { console.error('[사용자 저장 오류]', e.message); }
+}
+
+// ── 매칭 로직 (프론트와 동일 기준) ───────────────────────
+function matchesUser(ann, conditions) {
+  const { interestRegions = [], budgetLimit = 0 } = conditions;
+  if (interestRegions.length > 0) {
+    const ok = interestRegions.some(r => {
+      const [sido, sigungu] = r.split(' ');
+      return ann.location.sido === sido &&
+             (!sigungu || ann.location.sigungu.includes(sigungu));
+    });
+    if (!ok) return false;
+  }
+  if (budgetLimit > 0) {
+    const prices = (ann.houseTypes || []).map(h => h.price).filter(p => p > 0);
+    if (prices.length > 0 && Math.min(...prices) > budgetLimit) return false;
+  }
+  return true;
+}
+
+// ── 이메일 발송 ────────────────────────────────────────────
+function getMailer() {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) return null;
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS },
+  });
+}
+
+async function sendNotificationEmail(email, matches) {
+  const mailer = getMailer();
+  if (!mailer) { console.warn('[메일] GMAIL_USER/GMAIL_PASS 미설정'); return false; }
+
+  const rows = matches.map(ann => {
+    const prices = (ann.houseTypes || []).map(h => h.price).filter(p => p > 0);
+    const priceStr = prices.length ? `${Math.min(...prices).toLocaleString()}만원~` : '공고 확인';
+    return `
+      <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:12px;">
+        <div style="font-weight:700;font-size:15px;margin-bottom:4px;">${ann.name}</div>
+        <div style="color:#64748b;font-size:12px;margin-bottom:2px;">📍 ${ann.location.sido} ${ann.location.sigungu} · ${ann.type}주택</div>
+        <div style="color:#64748b;font-size:12px;margin-bottom:8px;">📅 공고일 ${ann.schedule.announcement||'-'} · 접수 ${ann.schedule.special||ann.schedule.general||'-'}</div>
+        <div style="color:#10b981;font-weight:700;font-size:13px;margin-bottom:8px;">💰 분양가 ${priceStr}</div>
+        ${ann.url ? `<a href="${ann.url}" style="font-size:12px;color:#3b82f6;">공고 상세 보기 →</a>` : ''}
+      </div>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:'-apple-system',sans-serif;background:#f8fafc;margin:0;padding:20px;">
+    <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+      <div style="background:#0f172a;padding:24px;text-align:center;">
+        <div style="font-size:22px;margin-bottom:4px;">🏠</div>
+        <div style="color:#fff;font-weight:700;font-size:18px;">청약도우미 알림</div>
+      </div>
+      <div style="padding:24px;">
+        <p style="color:#334155;font-size:14px;margin-bottom:20px;">등록하신 조건에 맞는 청약 공고가 <strong>${matches.length}건</strong> 있습니다.</p>
+        ${rows}
+      </div>
+      <div style="background:#f8fafc;padding:16px;text-align:center;font-size:11px;color:#94a3b8;">
+        청약도우미 · 수신 거부는 앱 설정 → 이메일 알림 → 해지
+      </div>
+    </div>
+  </body></html>`;
+
+  await mailer.sendMail({
+    from: `"청약도우미" <${process.env.GMAIL_USER}>`,
+    to: email,
+    subject: `[청약도우미] 조건 맞는 공고 ${matches.length}건 알림`,
+    html,
+  });
+  return true;
+}
+
+// ── 알림 발송 메인 ─────────────────────────────────────────
+async function sendNotifications(announcements) {
+  const users = loadUsers();
+  if (!users.length) return;
+
+  let updated = false;
+  for (const u of users) {
+    const newMatches = announcements.filter(ann =>
+      matchesUser(ann, u.conditions) && !u.notifiedIds.includes(ann.id)
+    );
+    if (!newMatches.length) continue;
+    try {
+      await sendNotificationEmail(u.email, newMatches);
+      u.notifiedIds.push(...newMatches.map(a => a.id));
+      console.log(`[알림] ${u.email} → ${newMatches.length}건 발송`);
+      updated = true;
+    } catch (e) {
+      console.error(`[알림 오류] ${u.email}:`, e.message);
+    }
+  }
+  if (updated) saveUsers(users);
+}
 
 // ── 청약홈 API 기본값 ─────────────────────────────────────
 // data.go.kr 서비스: 한국부동산원_청약홈 분양정보 조회 서비스 (15098547)
@@ -303,6 +416,43 @@ app.get('/api/announcements', async (req, res) => {
   }
 });
 
+// ── 알림 등록 / 해지 / 상태 ──────────────────────────────
+app.use(express.json());
+
+app.post('/api/notify/register', (req, res) => {
+  const { email, conditions } = req.body;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ ok: false, error: '유효하지 않은 이메일' });
+  }
+  const users = loadUsers();
+  const idx = users.findIndex(u => u.email === email);
+  const entry = {
+    email,
+    conditions: {
+      interestRegions: conditions?.interestRegions || [],
+      budgetLimit:     conditions?.budgetLimit     || 0,
+    },
+    notifiedIds:  idx >= 0 ? users[idx].notifiedIds : [],
+    registeredAt: new Date().toISOString(),
+  };
+  if (idx >= 0) users[idx] = entry; else users.push(entry);
+  saveUsers(users);
+  res.json({ ok: true });
+});
+
+app.delete('/api/notify/unregister', (req, res) => {
+  const { email } = req.body;
+  const users = loadUsers().filter(u => u.email !== email);
+  saveUsers(users);
+  res.json({ ok: true });
+});
+
+app.get('/api/notify/status', (req, res) => {
+  const { email } = req.query;
+  const user = loadUsers().find(u => u.email === email);
+  res.json({ ok: true, registered: !!user, conditions: user?.conditions || null });
+});
+
 // 공고문 내용 스크래핑 (puppeteer)
 app.get('/api/announcement-content', async (req, res) => {
   const { url } = req.query;
@@ -398,6 +548,7 @@ app.listen(PORT, () => {
         const data = await fetchFromAPI(process.env.APT_API_KEY);
         _cache = { data, ts: Date.now() };
         console.log(`[스케줄러] 갱신 완료: ${data.length}건`);
+        await sendNotifications(data);
       } catch (err) {
         console.error('[스케줄러] 갱신 실패:', err.message);
       }
