@@ -85,6 +85,9 @@ window.onerror=function(msg,src,line,col,err){
 const {useState,useEffect,useRef,useMemo,useCallback}=React;
 function urlBase64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(base64);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));}
 
+// 숫자 입력 필드 포커스 시 전체 선택 → 앞자리 0 덮어쓰기 문제 해결
+document.addEventListener('focus',e=>{if(e.target.type==='number')e.target.select();},true);
+
 /* ═══════════════════════════════════════════════
    DATA
 ═══════════════════════════════════════════════ */
