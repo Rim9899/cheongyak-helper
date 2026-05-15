@@ -6,6 +6,7 @@ const fs         = require('fs');
 const cron       = require('node-cron');
 const nodemailer = require('nodemailer');
 const webpush    = require('web-push');
+const Anthropic  = require('@anthropic-ai/sdk');
 let puppeteer;
 try { puppeteer = require('puppeteer'); } catch { console.warn('[puppeteer] 미설치'); }
 
@@ -29,11 +30,20 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
   console.warn('[VAPID] VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY 미설정 — 푸시 비활성');
 }
 
+// ── Claude AI 설정 ────────────────────────────────────────
+// API 키는 구독자별로 subscriptions.json에 저장된 키를 사용
+// (사용자가 설정 탭에 입력한 키 → 구독 시 서버 전송)
+function getAnthropicClient(apiKey) {
+  if (!apiKey) return null;
+  return new Anthropic({ apiKey });
+}
+
 // ── 사용자 알림 데이터 ─────────────────────────────────────
 // Render 영구 디스크 사용 시 DATA_DIR=/data 환경변수로 지정
-const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const SUBS_FILE  = path.join(DATA_DIR, 'subscriptions.json');
+const DATA_DIR        = process.env.DATA_DIR || path.join(__dirname, 'data');
+const USERS_FILE      = path.join(DATA_DIR, 'users.json');
+const SUBS_FILE       = path.join(DATA_DIR, 'subscriptions.json');
+const ANALYSIS_CACHE  = path.join(DATA_DIR, 'analysis_cache.json');
 
 function loadUsers() {
   try {
@@ -51,16 +61,194 @@ function saveUsers(users) {
 
 function loadSubs() {
   try {
-    if (!fs.existsSync(SUBS_FILE)) return [];
-    return JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
-  } catch { return []; }
+    if (!fs.existsSync(SUBS_FILE)) {
+      console.log(`[구독] 파일 없음: ${SUBS_FILE}`);
+      return [];
+    }
+    const data = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
+    console.log(`[구독] 로드: ${data.length}건 from ${SUBS_FILE}`);
+    return data;
+  } catch (e) {
+    console.error('[구독 로드 오류]', e.message);
+    return [];
+  }
 }
 
 function saveSubs(subs) {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(SUBS_FILE, JSON.stringify(subs, null, 2), 'utf8');
-  } catch (e) { console.error('[구독 저장 오류]', e.message); }
+    console.log(`[구독] 저장 완료: ${subs.length}건 → ${SUBS_FILE}`);
+  } catch (e) {
+    console.error('[구독 저장 오류]', e.message, e.code);
+  }
+}
+
+// ── 분석 캐시 ────────────────────────────────────────────
+function loadAnalysisCache() {
+  try {
+    if (!fs.existsSync(ANALYSIS_CACHE)) return {};
+    return JSON.parse(fs.readFileSync(ANALYSIS_CACHE, 'utf8'));
+  } catch { return {}; }
+}
+function saveAnalysisCache(cache) {
+  try { fs.writeFileSync(ANALYSIS_CACHE, JSON.stringify(cache, null, 2), 'utf8'); }
+  catch (e) { console.error('[분석캐시 저장오류]', e.message); }
+}
+
+// ── 공고문 전체 스크래핑 ───────────────────────────────────
+async function scrapeAnnouncementFull(url) {
+  if (!puppeteer) return null;
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--single-process','--no-zygote'],
+    });
+    const page = await browser.newPage();
+    await page.setDefaultNavigationTimeout(25000);
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.goto(url, { waitUntil: 'networkidle0' });
+    const content = await page.evaluate(() => document.body.innerText || '');
+    return content.slice(0, 30000);
+  } catch (e) {
+    console.error('[공고문 전문 스크래핑 오류]', e.message);
+    return null;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
+// ── AI 자격 분석 ─────────────────────────────────────────
+function buildProfileCacheKey(p) {
+  return [
+    p.birthYear||0, p.married?1:0, p.houseOwnership||'none',
+    p.hadHouseBefore?1:0, p.homelessYears||0, p.dependents||0,
+    p.monthlyIncome||0, p.totalAsset||0, p.realEstateValue||0,
+    p.isHouseholder?1:0, p.savingsYears||0, p.savingsCount||0,
+    p.parentBirthYear||0, p.parentBirthMonth||0,
+  ].join('_');
+}
+
+async function analyzeEligibility(ann, profile, apiKey) {
+  const anthropic = getAnthropicClient(apiKey);
+  if (!anthropic) return null;
+
+  const cache = loadAnalysisCache();
+  const cacheKey = `${ann.id}__${buildProfileCacheKey(profile)}`;
+  const TTL = 7 * 24 * 60 * 60 * 1000;
+
+  if (cache[cacheKey] && (Date.now() - new Date(cache[cacheKey].analyzedAt).getTime()) < TTL) {
+    console.log(`[AI분석] 캐시 사용: ${ann.name}`);
+    return cache[cacheKey];
+  }
+
+  // 공고 기본 정보 구성
+  const prices = (ann.houseTypes || []).map(h => h.price).filter(p => p > 0);
+  const priceStr = prices.length
+    ? `${Math.min(...prices).toLocaleString()}만원 ~ ${Math.max(...prices).toLocaleString()}만원`
+    : '미제공';
+  let docText = `공고명: ${ann.name}
+지역: ${ann.location.sido} ${ann.location.sigungu}
+주소: ${ann.location.address}
+유형: ${ann.type}주택
+공고일: ${ann.schedule.announcement}
+특별공급 접수: ${ann.schedule.special || '-'}
+일반공급 접수: ${ann.schedule.general || '-'}
+분양가: ${priceStr}
+총 세대수: ${ann.totalUnits}세대
+`;
+
+  // 공고문 전문 스크래핑
+  if (ann.url) {
+    console.log(`[AI분석] 공고문 스크래핑 시작: ${ann.name}`);
+    const scraped = await scrapeAnnouncementFull(ann.url).catch(() => null);
+    if (scraped) {
+      docText += `\n[공고문 전문]\n${scraped}`;
+      console.log(`[AI분석] 스크래핑 완료: ${scraped.length}자`);
+    } else {
+      console.warn(`[AI분석] 스크래핑 실패, 기본 정보로만 분석`);
+    }
+  }
+
+  // 신청자 프로필 텍스트
+  const now = new Date();
+  const age = profile.birthYear ? now.getFullYear() - profile.birthYear : 0;
+  const parentAge = profile.parentBirthYear
+    ? now.getFullYear() - profile.parentBirthYear -
+      (now.getMonth() + 1 < (profile.parentBirthMonth || 1) ? 1 : 0)
+    : 0;
+
+  const profileText = `- 나이: 만 ${age}세 (${profile.birthYear || '미입력'}년생)
+- 혼인: ${profile.married ? '기혼' : '미혼'}
+- 거주지: ${profile.sido || '-'} ${profile.sigungu || '-'}
+- 세대주 여부: ${profile.isHouseholder ? '세대주' : '세대원'}
+- 현재 주택 소유: ${profile.houseOwnership === 'none' ? '무주택' : profile.houseOwnership === 'one' ? '1주택' : '다주택'}
+- 과거 주택 소유 이력: ${profile.hadHouseBefore ? '있음' : '없음'}
+- 무주택 기간: ${profile.homelessYears || 0}년
+- 부양가족 수: ${profile.dependents || 0}명
+- 가구 월평균 소득: ${profile.monthlyIncome || 0}만원
+- 가용 현금: ${profile.availableCash || 0}만원
+- 부동산 가액: ${profile.realEstateValue || 0}만원
+- 총 자산(본인+부모): ${profile.totalAsset || 0}만원
+- 재직 여부: ${profile.isWorking ? '재직 중' : '미재직/자영업'}
+- 소득세 납부 기간: ${profile.incomeTaxYears || 0}년
+- 청약통장 가입: ${profile.savingsYears || 0}년 ${profile.savingsMonths || 0}개월
+- 청약통장 납입 횟수: ${profile.savingsCount || 0}회${
+  parentAge > 0
+    ? `\n- 동거 부모 나이: 만 ${parentAge}세${parentAge >= 60 ? ' ← 60세 이상 유주택자 부모 동거 예외 해당 가능' : ''}`
+    : ''
+}`;
+
+  const prompt = `당신은 대한민국 청약 전문가입니다. 아래 공고와 신청자 프로필을 보고 지원 가능성을 종합 분석해 주세요.
+
+[신청자 프로필]
+${profileText}
+
+[청약 공고]
+${docText.slice(0, 24000)}
+
+다음 항목을 모두 검토하세요:
+1. 무주택 자격 (60세 이상 유주택 부모 동거 시 무주택자 인정 여부 포함)
+2. 소득 기준 (도시근로자 월평균 소득 대비 %)
+3. 자산 기준 (부동산·총자산 한도)
+4. 청약통장 요건 (가입기간·납입횟수·지역우선)
+5. 거주지 요건
+6. 세대주·세대원 요건
+7. 특별공급 가능 유형 (신혼·생애최초·다자녀·노부모 등)
+8. 일반공급 가점 예상
+9. 기타 결격 사유
+
+반드시 아래 JSON만 출력하세요 (마크다운·설명 없이):
+{
+  "eligible": true,
+  "confidence": "high",
+  "issues": ["문제가 될 수 있는 항목 (구체적으로)"],
+  "positives": ["유리한 사항"],
+  "checkItems": ["공고문에서 직접 확인해야 할 항목"],
+  "summary": "한 문장 요약"
+}`;
+
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    let text = msg.content[0].text.trim();
+    if (text.startsWith('```')) text = text.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim();
+
+    const result = JSON.parse(text);
+    result.analyzedAt = new Date().toISOString();
+    cache[cacheKey] = result;
+    saveAnalysisCache(cache);
+    console.log(`[AI분석] ${ann.name}: ${result.summary} | 적격=${result.eligible} 신뢰도=${result.confidence}`);
+    return result;
+  } catch (e) {
+    console.error('[AI분석 오류]', e.message);
+    return null;
+  }
 }
 
 // ── 매칭 로직 (프론트와 동일 기준) ───────────────────────
@@ -132,7 +320,7 @@ async function sendNotificationEmail(email, matches) {
   return true;
 }
 
-// ── 웹 푸시 발송 ──────────────────────────────────────────
+// ── 웹 푸시 발송 (AI 자격 분석 포함) ─────────────────────
 async function sendPushNotifications(announcements) {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
   const subs = loadSubs();
@@ -147,22 +335,43 @@ async function sendPushNotifications(announcements) {
     );
     if (!newMatches.length) continue;
 
+    // AI 자격 분석 (공고문 전체 읽기 + 사용자 프로필 기반 판단)
+    const profile = sub.conditions.profile || {};
+    const analyzed = [];
+
+    for (const ann of newMatches) {
+      const analysis = await analyzeEligibility(ann, profile, sub.claudeApiKey);
+      if (analysis === null) {
+        // 분석 실패 → 놓치지 않기 위해 포함
+        analyzed.push({ ann, analysis: null });
+      } else if (analysis.eligible !== false) {
+        analyzed.push({ ann, analysis });
+      } else {
+        console.log(`[AI분석] 부적격 제외: ${ann.name} — ${analysis.summary}`);
+      }
+    }
+
+    // 이미 확인한 공고는 모두 notifiedIds에 추가 (재분석 방지)
+    sub.notifiedIds.push(...newMatches.map(a => a.id));
+    updated = true;
+
+    if (!analyzed.length) continue;
+
     const payload = JSON.stringify({
-      title: `🏠 new 매칭 공고 ${newMatches.length}건 등록`,
-      body:  newMatches.slice(0, 3).map(a => {
-        const prices = (a.houseTypes || []).map(h => h.price).filter(p => p > 0);
+      title: `🏠 매칭 공고 ${analyzed.length}건`,
+      body: analyzed.slice(0, 3).map(({ ann, analysis }) => {
+        const prices = (ann.houseTypes || []).map(h => h.price).filter(p => p > 0);
         const priceStr = prices.length ? `${(Math.min(...prices) / 10000).toFixed(1)}억~` : '';
-        const shortName = a.name.length > 10 ? a.name.slice(0, 10) + '…' : a.name;
-        return `${a.location.sido} ${a.location.sigungu}, ${shortName}${priceStr ? ` (${priceStr})` : ''}`;
+        const shortName = ann.name.length > 10 ? ann.name.slice(0, 10) + '…' : ann.name;
+        const warn = analysis?.issues?.length ? ' ⚠️' : '';
+        return `${ann.location.sido} ${ann.location.sigungu}, ${shortName}${priceStr ? ` (${priceStr})` : ''}${warn}`;
       }).join('\n'),
-      url:   '/',
+      url: '/',
     });
 
     try {
       await webpush.sendNotification(sub.subscription, payload);
-      sub.notifiedIds.push(...newMatches.map(a => a.id));
-      console.log(`[푸시] 발송 ${newMatches.length}건`);
-      updated = true;
+      console.log(`[푸시] 발송 ${analyzed.length}건 (AI 필터: ${newMatches.length}건 → ${analyzed.length}건)`);
     } catch (e) {
       if (e.statusCode === 410 || e.statusCode === 404) dead.push(sub.subscription.endpoint);
       console.error('[푸시 오류]', e.statusCode, e.message);
@@ -493,7 +702,8 @@ app.get('/api/push/vapid-public-key', (req, res) => {
 });
 
 app.post('/api/push/subscribe', (req, res) => {
-  const { subscription, conditions } = req.body;
+  const { subscription, conditions, claudeApiKey } = req.body;
+  console.log(`[구독 요청] endpoint: ${subscription?.endpoint?.slice(0, 60)}... DATA_DIR: ${DATA_DIR}`);
   if (!subscription?.endpoint) return res.status(400).json({ ok: false, error: 'subscription 없음' });
   const subs = loadSubs();
   const idx  = subs.findIndex(s => s.subscription.endpoint === subscription.endpoint);
@@ -502,7 +712,9 @@ app.post('/api/push/subscribe', (req, res) => {
     conditions: {
       interestRegions: conditions?.interestRegions || [],
       budgetLimit:     conditions?.budgetLimit     || 0,
+      profile:         conditions?.profile         || {},
     },
+    claudeApiKey:  claudeApiKey || (idx >= 0 ? subs[idx].claudeApiKey : ''),
     notifiedIds:  idx >= 0 ? subs[idx].notifiedIds : [],
     registeredAt: new Date().toISOString(),
   };
@@ -515,6 +727,24 @@ app.delete('/api/push/unsubscribe', (req, res) => {
   const { endpoint } = req.body;
   saveSubs(loadSubs().filter(s => s.subscription.endpoint !== endpoint));
   res.json({ ok: true });
+});
+
+app.get('/api/push/debug', (req, res) => {
+  const dirExists = fs.existsSync(DATA_DIR);
+  const fileExists = fs.existsSync(SUBS_FILE);
+  let subs = [];
+  let fileContent = null;
+  try { subs = loadSubs(); } catch {}
+  try { if (fileExists) fileContent = fs.readFileSync(SUBS_FILE, 'utf8').slice(0, 500); } catch {}
+  res.json({
+    DATA_DIR,
+    SUBS_FILE,
+    dirExists,
+    fileExists,
+    subsCount: subs.length,
+    vapidConfigured: !!(VAPID_PUBLIC && VAPID_PRIVATE),
+    filePreview: fileContent,
+  });
 });
 
 app.post('/api/push/test', async (req, res) => {
