@@ -529,8 +529,12 @@ app.post('/api/push/test', async (req, res) => {
     subs.map(s => webpush.sendNotification(s.subscription, payload))
   );
   const sent = results.filter(r => r.status === 'fulfilled').length;
-  const errors = results.filter(r => r.status === 'rejected').map(r => r.reason?.message || r.reason?.statusCode);
-  res.json({ ok: true, sent, total: subs.length, errors });
+  const errors = results.filter(r => r.status === 'rejected').map(r => ({
+    statusCode: r.reason?.statusCode,
+    message: r.reason?.message,
+    body: r.reason?.body,
+  }));
+  res.json({ ok: sent > 0, sent, total: subs.length, errors });
 });
 
 // ── 이메일 알림 등록 / 해지 / 상태 ──────────────────────────────
