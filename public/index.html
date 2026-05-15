@@ -2009,7 +2009,7 @@ function SettingsPage({apiKey,onKeySet,user,onUserUpdate}){
       <div className="card" style={{borderColor:'rgba(240,96,96,.25)'}}>
         <div style={{fontWeight:700,fontSize:13,color:'var(--ruby)',marginBottom:7}}>위험 구역</div>
         <div style={{fontSize:12,color:'var(--dust2)',marginBottom:12}}>모든 데이터(프로필, 즐겨찾기, 설정)가 삭제되고 처음부터 다시 시작합니다.</div>
-        <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm('전체 초기화하시겠습니까?')){localStorage.clear();window.location.reload();}}}>
+        <button className="btn btn-danger btn-sm" onClick={()=>{if(confirm('전체 초기화하시겠습니까?')){localStorage.clear();onKeySet('');}}}>
           <ITrash c={13}/>전체 초기화
         </button>
       </div>
