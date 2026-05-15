@@ -148,8 +148,13 @@ async function sendPushNotifications(announcements) {
     if (!newMatches.length) continue;
 
     const payload = JSON.stringify({
-      title: `청약도우미 — 새 공고 ${newMatches.length}건`,
-      body:  newMatches.slice(0, 3).map(a => a.name).join('\n'),
+      title: `🏠 new 매칭 공고 ${newMatches.length}건 등록`,
+      body:  newMatches.slice(0, 3).map(a => {
+        const prices = (a.houseTypes || []).map(h => h.price).filter(p => p > 0);
+        const priceStr = prices.length ? `${(Math.min(...prices) / 10000).toFixed(1)}억~` : '';
+        const shortName = a.name.length > 10 ? a.name.slice(0, 10) + '…' : a.name;
+        return `${a.location.sido} ${a.location.sigungu}, ${shortName}${priceStr ? ` (${priceStr})` : ''}`;
+      }).join('\n'),
       url:   '/',
     });
 
@@ -520,8 +525,8 @@ app.post('/api/push/test', async (req, res) => {
     return res.status(404).json({ ok: false, error: '등록된 구독 없음' });
 
   const payload = JSON.stringify({
-    title: '청약도우미 — 새 공고 2건',
-    body:  '힐스테이트 용인 고림\n래미안 강동 팰리스',
+    title: '🏠 new 매칭 공고 2건 등록',
+    body:  '경기 용인시, 힐스테이트 용인고림 (4.2억~)\n서울 강동구, 래미안 강동팰리스 (9.8억~)',
     url:   '/',
   });
 
