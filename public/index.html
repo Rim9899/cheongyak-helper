@@ -443,6 +443,7 @@ function filterLargestPoly(f){
   return f;
 }
 function RegionMap({selected,onToggleDistrict,onToggleAll}){
+  const isMobile=useIsMobile();
   const [drill,setDrill]=useState(null);
   const [geoP,setGeoP]=useState(null);
   const [geoM,setGeoM]=useState(null);
@@ -470,6 +471,119 @@ function RegionMap({selected,onToggleDistrict,onToggleAll}){
   );
 
   if(loading)return<div style={{height:280,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--dust3)',fontSize:12,flexDirection:'column',gap:8}}><div style={{width:20,height:20,border:'2px solid var(--line2)',borderTopColor:'var(--sky)',borderRadius:'50%',animation:'spin .9s linear infinite'}}/>지도 데이터 로딩 중…</div>;
+
+  /* ── 모바일: 읽기전용 미니맵 + 텍스트 목록 ── */
+  if(isMobile){
+    const W=320,H=430,PAD=6;
+    const miniMap=(geoP&&typeof d3!=='undefined')?(() => {
+      const proj=d3.geoMercator().fitSize([W-PAD*2,H-PAD*2],geoP);
+      const pg=d3.geoPath().projection(proj);
+      return(
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          <rect x={0} y={0} width={W} height={H} fill="#1a1f35"/>
+          <g transform={`translate(${PAD},${PAD})`}>
+            {geoP.features.map(f=>{
+              const full=f.properties.name||'';
+              const sido=FULL_SIDO[full];
+              if(!sido)return null;
+              const ff=filterLargestPoly(f);
+              if(!ff)return null;
+              const cnt=selected.filter(r=>r.startsWith(sido+' ')).length;
+              const dList=DISTRICTS[sido]||[];
+              const allSel=dList.length>0&&cnt===dList.length;
+              const hasSel=cnt>0;
+              const d=pg(ff);
+              if(!d)return null;
+              const[cx,cy]=pg.centroid(ff);
+              const ldr=LEADER_OFFSETS[sido];
+              const[ox,oy]=ldr||LABEL_SHIFT[sido]||[0,0];
+              const tx=cx+ox,ty=cy+oy;
+              return(
+                <g key={sido}>
+                  <path d={d} fill={allSel?'#3d7ed4':hasSel?'#2d5fa0':'#1e2748'} stroke={'rgba(140,170,230,.55)'} strokeWidth={1.5}/>
+                  {hasSel&&!isNaN(cx)&&!isNaN(cy)&&(<>
+                    {ldr&&<>
+                      <circle cx={cx} cy={cy} r={2.5} fill='#7ab8ff' pointerEvents="none"/>
+                      <line x1={cx} y1={cy} x2={tx} y2={ty} stroke='rgba(120,184,255,.45)' strokeWidth={0.8} strokeDasharray="2,2" pointerEvents="none"/>
+                    </>}
+                    <text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle"
+                      fill='#e0eeff' stroke="#1a1f35" strokeWidth={2.5} paintOrder="stroke"
+                      fontSize={9} fontWeight={700} pointerEvents="none">
+                      {sido}{cnt>0?`(${cnt})`:''}
+                    </text>
+                  </>)}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      );
+    })():null;
+
+    const TextList=()=>(
+      <div style={{maxHeight:360,overflowY:'auto'}}>
+        {SIDO.map(sido=>{
+          const dists=DISTRICTS[sido]||[];
+          const cnt=selected.filter(r=>r.startsWith(sido+' ')).length;
+          const allS=dists.length>0&&cnt===dists.length;
+          const isExp=!!expSido[sido];
+          return(
+            <div key={sido} style={{borderBottom:'1px solid rgba(100,120,170,.13)'}}>
+              <div style={{display:'flex',alignItems:'center',padding:'8px 12px',cursor:'pointer',background:cnt>0?'rgba(74,144,245,.07)':'transparent',gap:6}}
+                onClick={()=>setExpSido(e=>({...e,[sido]:!e[sido]}))}>
+                <span style={{fontSize:9,color:'#5a6b8a',width:10,flexShrink:0}}>{isExp?'▼':'▶'}</span>
+                <span style={{fontSize:13,fontWeight:600,color:cnt>0?'#7ab8ff':'#b0bde0',flex:1}}>{sido}</span>
+                {cnt>0&&<span style={{fontSize:10,color:'#7ab8ff',fontWeight:700,marginRight:4}}>{cnt}/{dists.length}</span>}
+                <button onClick={e=>{e.stopPropagation();onToggleAll(sido);}}
+                  style={{fontSize:11,padding:'3px 9px',borderRadius:5,border:`1px solid ${allS?'rgba(74,144,245,.5)':'rgba(100,120,170,.4)'}`,background:allS?'rgba(74,144,245,.2)':'transparent',color:allS?'#7ab8ff':'#6a7799',cursor:'pointer',flexShrink:0}}>
+                  {allS?'해제':'전체'}
+                </button>
+              </div>
+              {isExp&&(
+                <div style={{display:'flex',flexWrap:'wrap',gap:5,padding:'8px 12px 10px',background:'rgba(0,0,0,.2)'}}>
+                  {dists.map(d=>{
+                    const sel=selected.includes(sido+' '+d);
+                    return(
+                      <button key={d} onClick={()=>onToggleDistrict(sido,d)}
+                        style={{fontSize:11,padding:'4px 10px',borderRadius:999,cursor:'pointer',
+                          border:`1px solid ${sel?'rgba(74,144,245,.6)':'rgba(100,120,170,.35)'}`,
+                          background:sel?'rgba(74,144,245,.25)':'transparent',
+                          color:sel?'#7ab8ff':'#8a9ab8',fontWeight:sel?700:400}}>
+                        {sel?'✓ ':''}{d}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+
+    return(
+      <div>
+        {miniMap&&(
+          <div style={{background:'#1a1f35',borderRadius:'12px 12px 0 0',border:'1px solid rgba(100,120,170,.5)',borderBottom:'1px solid rgba(100,120,170,.2)',overflow:'hidden'}}>
+            <div style={{padding:'7px 12px',borderBottom:'1px solid rgba(100,120,170,.3)',display:'flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.2)'}}>
+              <span style={{fontSize:11,fontWeight:700,color:'#b0bde0',flex:1}}>🗺 선택 현황</span>
+              {selected.length>0&&<span style={{fontSize:10,color:'#7ab8ff',fontWeight:700}}>✓ {selected.length}개 선택</span>}
+            </div>
+            {miniMap}
+          </div>
+        )}
+        <div style={{background:'#1a1f35',borderRadius:miniMap?'0 0 12px 12px':'12px',border:'1px solid rgba(100,120,170,.5)',borderTop:miniMap?'none':undefined,overflow:'hidden'}}>
+          <div style={{padding:'8px 12px',borderBottom:'1px solid rgba(100,120,170,.3)',background:'rgba(0,0,0,.2)'}}>
+            <span style={{fontSize:11,fontWeight:700,color:'#b0bde0'}}>≡ 지역 선택 (시/도 탭 → 구/군 선택)</span>
+          </div>
+          <TextList/>
+          <div style={{padding:'6px 12px',background:'rgba(0,0,0,.25)',fontSize:10,color:selected.length>0?'#7ab8ff':'#5a6b8a',fontWeight:selected.length>0?600:400}}>
+            {selected.length>0?`✓ 총 ${selected.length}개 지역 선택됨`:'시/도를 탭해 펼치세요'}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /* ── 텍스트 목록 모드 ── */
   if(viewMode==='text'){
