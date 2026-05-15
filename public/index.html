@@ -1082,6 +1082,7 @@ function ScoreRing({score,max=84,size=80}){
    HOME / DASHBOARD
 ═══════════════════════════════════════════════ */
 function Home({user,apiKey,setPage,setDid,announcements}){
+  const isMobile=useIsMobile();
   const favIds=S.getFavs();
   const g=calcGajeom(user);
   const regs=user.interestRegions||[];
@@ -1093,11 +1094,80 @@ function Home({user,apiKey,setPage,setDid,announcements}){
     return rm&&(!budgetLimit||!minP||minP<=budgetLimit);
   }),[user,announcements]);
 
-  const upcoming=announcements.flatMap(a=>[
-    {name:a.name,ev:'청약접수',date:a.schedule.general,id:a.id},
-    {name:a.name,ev:'당첨발표',date:a.schedule.winner,id:a.id},
-  ]).filter(e=>e.date&&new Date(e.date)>=new Date()).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,4);
+  const AnnCard=({a})=>{
+    const ps=a.houseTypes.map(h=>h.price).filter(p=>p>0);
+    const priceStr=ps.length?fmtN(Math.min(...ps))+'만~':'공고 확인';
+    return (
+      <div className="card-sm" onClick={()=>{setDid(a.id);setPage('detail');}} style={{cursor:'pointer',transition:'border-color .15s'}}
+        onMouseEnter={e=>e.currentTarget.style.borderColor='var(--line2)'}
+        onMouseLeave={e=>e.currentTarget.style.borderColor='var(--line)'}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name}</div>
+            <div style={{fontSize:11,color:'var(--dust3)',display:'flex',alignItems:'center',gap:3}}>
+              <IPin c={10}/>{a.location.sido} {a.location.sigungu}
+            </div>
+          </div>
+          <IChevR c={12} col="var(--dust3)" style={{flexShrink:0}}/>
+        </div>
+        <div style={{display:'flex',gap:5,marginTop:8,alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',gap:4}}>{a.tags.slice(0,2).map(t=><span key={t} className="tag">{t}</span>)}</div>
+          <span style={{fontSize:12,color:'var(--jade)',fontWeight:700,whiteSpace:'nowrap'}}>{priceStr}</span>
+        </div>
+      </div>
+    );
+  };
 
+  /* ── 모바일 레이아웃 ── */
+  if(isMobile) return (
+    <div style={{padding:16}}>
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:18,fontWeight:700,marginBottom:2}}>안녕하세요 👋</div>
+        <div style={{color:'var(--dust2)',fontSize:12}}>{user.sido} {user.sigungu} · 만{new Date().getFullYear()-user.birthYear}세 · {user.married?'기혼':'미혼'} · {user.houseOwnership==='none'?'무주택':user.houseOwnership==='one'?'1주택':'다주택'}</div>
+      </div>
+
+      {/* 가점 + 통계 3칸 */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:16}}>
+        <div className="card" style={{padding:'12px 10px',textAlign:'center'}}>
+          <div style={{fontSize:10,color:'var(--dust3)',marginBottom:4}}>내 가점</div>
+          <div style={{fontSize:22,fontWeight:900,color:'var(--sky)'}}>{g.total}</div>
+          <div style={{fontSize:9,color:'var(--dust3)'}}>/84점</div>
+        </div>
+        <div className="card" style={{padding:'12px 10px',textAlign:'center',cursor:'pointer'}} onClick={()=>setPage('matched')}>
+          <div style={{fontSize:10,color:'var(--dust3)',marginBottom:4}}>매칭 청약</div>
+          <div style={{fontSize:22,fontWeight:900,color:'var(--jade)'}}>{matched.length}</div>
+          <div style={{fontSize:9,color:'var(--sky)'}}>보기 &rsaquo;</div>
+        </div>
+        <div className="card" style={{padding:'12px 10px',textAlign:'center',cursor:'pointer'}} onClick={()=>setPage('list')}>
+          <div style={{fontSize:10,color:'var(--dust3)',marginBottom:4}}>즐겨찾기</div>
+          <div style={{fontSize:22,fontWeight:900,color:'var(--gold)'}}>{favIds.length}</div>
+          <div style={{fontSize:9,color:'var(--sky)'}}>보기 &rsaquo;</div>
+        </div>
+      </div>
+
+      {/* 매칭된 공고 */}
+      <div style={{marginBottom:20}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div style={{fontWeight:700,fontSize:14}}>매칭된 공고</div>
+          <button onClick={()=>setPage('list')} style={{fontSize:11,color:'var(--sky)',display:'flex',alignItems:'center',gap:2,cursor:'pointer'}}>전체보기 <IChevR c={11} col="var(--sky)"/></button>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {matched.slice(0,3).map(a=><AnnCard key={a.id} a={a}/>)}
+          {matched.length===0&&<div style={{padding:'20px',textAlign:'center',color:'var(--dust3)',fontSize:13}}>조건에 맞는 청약이 없습니다</div>}
+        </div>
+      </div>
+
+      {/* 다가오는 일정 */}
+      <div style={{marginBottom:8}}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>다가오는 일정</div>
+        <div className="card-sm" style={{padding:12}}>
+          <MiniCalendar announcements={announcements} setPage={setPage} setDid={setDid}/>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── 데스크톱 레이아웃 ── */
   const Stat=({label,val,col,onClick})=>(
     <div className="card" style={{cursor:onClick?'pointer':'default',transition:'border-color .15s'}}
       onClick={onClick}
@@ -1108,29 +1178,24 @@ function Home({user,apiKey,setPage,setDid,announcements}){
       {onClick&&<div style={{display:'flex',alignItems:'center',gap:3,color:'var(--sky)',fontSize:11,marginTop:8}}>보기 <IChevR c={11} col="var(--sky)"/></div>}
     </div>
   );
-
   return (
     <div style={{padding:28,maxWidth:920,margin:'0 auto'}}>
       <div style={{marginBottom:26}}>
         <div style={{fontSize:20,fontWeight:700,marginBottom:3}}>안녕하세요 👋</div>
         <div style={{color:'var(--dust2)',fontSize:13}}>{user.sido} {user.sigungu} · 만{new Date().getFullYear()-user.birthYear}세 · {user.married?'기혼':'미혼'} · {user.houseOwnership==='none'?'무주택':user.houseOwnership==='one'?'1주택':'다주택'}</div>
       </div>
-
       <div style={{display:'grid',gridTemplateColumns:'auto 1fr 1fr',gap:12,marginBottom:24}}>
         <div className="card" style={{display:'flex',alignItems:'center',gap:18}}>
           <ScoreRing score={g.total}/>
           <div>
             <div style={{fontSize:11,color:'var(--dust3)',marginBottom:3}}>내 청약 가점</div>
             <div style={{fontSize:24,fontWeight:900,color:'var(--sky)'}}>{g.total}<span style={{fontSize:13,fontWeight:400,color:'var(--dust3)'}}>/84점</span></div>
-            <div style={{fontSize:10,color:'var(--dust3)',marginTop:6,lineHeight:1.8}}>
-              무주택 {g.hl}점 · 부양 {g.dp}점 · 통장 {g.sv}점
-            </div>
+            <div style={{fontSize:10,color:'var(--dust3)',marginTop:6,lineHeight:1.8}}>무주택 {g.hl}점 · 부양 {g.dp}점 · 통장 {g.sv}점</div>
           </div>
         </div>
         <Stat label="📡 매칭된 청약" val={matched.length} col="var(--jade)" onClick={()=>setPage('matched')}/>
         <Stat label="⭐ 즐겨찾기" val={favIds.length} col="var(--gold)" onClick={()=>setPage('list')}/>
       </div>
-
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
         <div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
@@ -1138,29 +1203,10 @@ function Home({user,apiKey,setPage,setDid,announcements}){
             <button onClick={()=>setPage('list')} style={{fontSize:11,color:'var(--sky)',display:'flex',alignItems:'center',gap:2,cursor:'pointer'}}>전체보기 <IChevR c={11} col="var(--sky)"/></button>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            {matched.slice(0,3).map(a=>(
-              <div key={a.id} className="card-sm" onClick={()=>{setDid(a.id);setPage('detail');}} style={{cursor:'pointer',transition:'border-color .15s'}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor='var(--line2)'}
-                onMouseLeave={e=>e.currentTarget.style.borderColor='var(--line)'}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:600,marginBottom:3,lineHeight:1.4}}>{a.name}</div>
-                    <div style={{fontSize:11,color:'var(--dust3)',display:'flex',alignItems:'center',gap:3}}>
-                      <IPin c={10}/>{a.location.sido} {a.location.sigungu}
-                    </div>
-                  </div>
-                  <IChevR c={12} col="var(--dust3)"/>
-                </div>
-                <div style={{display:'flex',gap:5,marginTop:8,flexWrap:'wrap',alignItems:'center',justifyContent:'space-between'}}>
-                  <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{a.tags.slice(0,2).map(t=><span key={t} className="tag">{t}</span>)}</div>
-                  <span style={{fontSize:12,color:'var(--jade)',fontWeight:700}}>{(()=>{const ps=a.houseTypes.map(h=>h.price).filter(p=>p>0);return ps.length?fmtN(Math.min(...ps))+'만~':'공고 확인';})()}</span>
-                </div>
-              </div>
-            ))}
+            {matched.slice(0,3).map(a=><AnnCard key={a.id} a={a}/>)}
             {matched.length===0&&<div style={{padding:'20px',textAlign:'center',color:'var(--dust3)',fontSize:13}}>조건에 맞는 청약이 없습니다</div>}
           </div>
         </div>
-
         <div>
           <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>다가오는 일정</div>
           <div className="card-sm" style={{padding:14}}>
@@ -1182,6 +1228,7 @@ function Home({user,apiKey,setPage,setDid,announcements}){
    LIST PAGE
 ═══════════════════════════════════════════════ */
 function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=false}){
+  const isMobile=useIsMobile();
   const [favIds,setFavIds]=useState(S.getFavs());
   const [flt,setFlt]=useState({region:'',type:'',fav:false,q:''});
   const toggle=id=>setFavIds(S.toggleFav(id));
@@ -1202,8 +1249,8 @@ function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=fals
   });
 
   return (
-    <div style={{padding:28,maxWidth:920,margin:'0 auto'}}>
-      <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10}}>
+    <div style={{padding:isMobile?14:28,maxWidth:920,margin:'0 auto'}}>
+      <div style={{marginBottom:isMobile?14:22,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10}}>
         <div>
           <div style={{fontSize:20,fontWeight:700,marginBottom:3}}>{matchedOnly?'📡 매칭된 청약':'청약 공고'}</div>
           <div style={{color:'var(--dust3)',fontSize:13}}>
@@ -1262,7 +1309,7 @@ function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=fals
                     <span className={`chip chip-${a.type==='민영'?'sky':'jade'}`}>{a.type}</span>
                     {a.restrictions.regulated&&<span className="chip chip-ruby">규제지역</span>}
                   </div>
-                  <div style={{fontSize:15,fontWeight:700,marginBottom:5,lineHeight:1.3}}>{a.name}</div>
+                  <div style={{fontSize:15,fontWeight:700,marginBottom:5,lineHeight:1.3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:isMobile?'nowrap':'normal'}}>{a.name}</div>
                   <div style={{display:'flex',gap:12,color:'var(--dust3)',fontSize:11}}>
                     <span style={{display:'flex',alignItems:'center',gap:3}}><IPin c={10}/>{a.location.sido} {a.location.sigungu}</span>
                     <span>총 {a.totalUnits}세대 · 최고 {a.maxFloor}층</span>
@@ -1274,12 +1321,12 @@ function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=fals
                 </div>
               </div>
               <div className="divider" style={{margin:'11px 0'}}/>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
+                {!isMobile&&<div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
                   {a.houseTypes.map(h=><span key={h.t} className="tag">{h.t} ({h.exclArea||h.area}㎡)</span>)}
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:10}}>
-                  <span style={{fontSize:11,color:'var(--dust3)',display:'flex',alignItems:'center',gap:3}}><ICal c={10}/>접수 {a.schedule.general}</span>
+                </div>}
+                <div style={{display:'flex',alignItems:'center',gap:isMobile?6:10,marginLeft:'auto'}}>
+                  <span style={{fontSize:11,color:'var(--dust3)',display:'flex',alignItems:'center',gap:3}}><ICal c={10}/>접수 {a.schedule.general||'-'}</span>
                   <button onClick={e=>{e.stopPropagation();toggle(a.id);}} style={{padding:'5px 9px',borderRadius:7,display:'flex',alignItems:'center',gap:3,background:isFav?'rgba(240,184,64,.12)':'var(--ink3)',border:`1px solid ${isFav?'rgba(240,184,64,.3)':'var(--line)'}`,color:isFav?'var(--gold)':'var(--dust3)',fontSize:11,cursor:'pointer',transition:'all .15s'}}>
                     <IStar c={11} fill={isFav?'var(--gold)':'none'} col={isFav?'var(--gold)':'currentColor'}/>{isFav?'저장됨':'저장'}
                   </button>
