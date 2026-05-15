@@ -512,6 +512,26 @@ app.delete('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/push/test', async (req, res) => {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE)
+    return res.status(503).json({ ok: false, error: 'VAPID 미설정' });
+  const subs = loadSubs();
+  if (!subs.length)
+    return res.status(404).json({ ok: false, error: '등록된 구독 없음' });
+
+  const payload = JSON.stringify({
+    title: '청약도우미 — 새 공고 2건',
+    body:  '힐스테이트 용인 고림\n래미안 강동 팰리스',
+    url:   '/',
+  });
+
+  const results = await Promise.allSettled(
+    subs.map(s => webpush.sendNotification(s.subscription, payload))
+  );
+  const sent = results.filter(r => r.status === 'fulfilled').length;
+  res.json({ ok: true, sent, total: subs.length });
+});
+
 // ── 이메일 알림 등록 / 해지 / 상태 ──────────────────────────────
 
 app.post('/api/notify/register', (req, res) => {
