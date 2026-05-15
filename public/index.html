@@ -1227,19 +1227,21 @@ function Home({user,apiKey,setPage,setDid,announcements}){
 /* ═══════════════════════════════════════════════
    LIST PAGE
 ═══════════════════════════════════════════════ */
-function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=false}){
+function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly:initMatchedOnly=false}){
   const isMobile=useIsMobile();
+  const [showMatched,setShowMatched]=useState(initMatchedOnly);
   const [favIds,setFavIds]=useState(S.getFavs());
   const [flt,setFlt]=useState({region:'',type:'',fav:false,q:''});
   const toggle=id=>setFavIds(S.toggleFav(id));
   const regs=user.interestRegions||[];
   const budgetLimitL=(user.availableCash||0)+(user.targetLoanAmount||0);
-  const baseList=useMemo(()=>matchedOnly?announcements.filter(a=>{
+  const matchedList=useMemo(()=>announcements.filter(a=>{
     const rm=matchRegion(a.location.sido,a.location.sigungu,regs);
     const prices=a.houseTypes.map(h=>h.price).filter(p=>p>0);
     const minP=prices.length?Math.min(...prices):0;
     return rm&&(!budgetLimitL||!minP||minP<=budgetLimitL);
-  }):announcements,[matchedOnly,user,announcements]);
+  }),[user,announcements]);
+  const baseList=showMatched?matchedList:announcements;
   const filtered=baseList.filter(a=>{
     if(flt.fav&&!favIds.includes(a.id))return false;
     if(flt.region&&!matchRegion(a.location.sido,a.location.sigungu,[flt.region]))return false;
@@ -1250,15 +1252,20 @@ function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=fals
 
   return (
     <div style={{padding:isMobile?14:28,maxWidth:920,margin:'0 auto'}}>
-      <div style={{marginBottom:isMobile?14:22,display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10}}>
-        <div>
-          <div style={{fontSize:20,fontWeight:700,marginBottom:3}}>{matchedOnly?'📡 매칭된 청약':'청약 공고'}</div>
-          <div style={{color:'var(--dust3)',fontSize:13}}>
-            {matchedOnly?`${baseList.length}건 매칭 (관심지역 + 분양가 기준) · `:`총 ${announcements.length}건 · `}
-            {dataSource==='api'?'청약홈 API 실데이터':dataSource==='offline'?'더미 데이터':'로딩 중…'}
-          </div>
+      {/* 세그먼트 탭 */}
+      <div style={{display:'flex',background:'var(--ink3)',borderRadius:12,padding:4,marginBottom:16,gap:4}}>
+        <button onClick={()=>setShowMatched(false)} style={{flex:1,padding:'9px 8px',borderRadius:9,border:'none',cursor:'pointer',fontSize:13,fontWeight:showMatched?400:700,background:showMatched?'transparent':'var(--ink2)',color:showMatched?'var(--dust3)':'var(--dust)',transition:'all .15s',boxShadow:showMatched?'none':'0 1px 4px rgba(0,0,0,.3)'}}>
+          전체 공고 <span style={{fontSize:11,color:'var(--dust3)',fontWeight:400}}>({announcements.length})</span>
+        </button>
+        <button onClick={()=>setShowMatched(true)} style={{flex:1,padding:'9px 8px',borderRadius:9,border:'none',cursor:'pointer',fontSize:13,fontWeight:showMatched?700:400,background:showMatched?'var(--sky)':'transparent',color:showMatched?'#fff':'var(--dust3)',transition:'all .15s',boxShadow:showMatched?'0 1px 4px rgba(74,144,245,.4)':'none'}}>
+          매칭된 공고 <span style={{fontSize:11,fontWeight:400,opacity:.85}}>({matchedList.length})</span>
+        </button>
+      </div>
+
+      <div style={{marginBottom:isMobile?10:18,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
+        <div style={{fontSize:12,color:'var(--dust3)'}}>
+          {showMatched?'관심지역 + 분양가 기준 매칭':'전체 공고'} · {dataSource==='api'?'청약홈 실데이터':dataSource==='offline'?'더미 데이터':'로딩 중…'}
         </div>
-        {matchedOnly&&<button className="btn btn-ghost btn-sm" onClick={()=>setPage('list')}><IBldg c={13}/>전체 공고 보기</button>}
       </div>
 
       <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
@@ -1988,6 +1995,7 @@ function App(){
       case'home':   return <Home user={user} apiKey={apiKey} setPage={setPage} setDid={setDetailId} announcements={announcements}/>;
       case'list':   return <ListPage user={user} setPage={setPage} setDid={setDetailId} announcements={announcements} dataSource={dataSource}/>;
       case'matched':return <ListPage user={user} setPage={setPage} setDid={setDetailId} announcements={announcements} dataSource={dataSource} matchedOnly={true}/>;
+
       case'detail': return <DetailPage annId={detailId} user={user} apiKey={apiKey} setPage={setPage} announcements={announcements}/>;
       case'profile':return <ProfilePage user={user} setPage={setPage}/>;
       case'settings':return <SettingsPage apiKey={apiKey} onKeySet={setKey} user={user} onUserUpdate={updateUser}/>;
