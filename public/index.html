@@ -1232,7 +1232,7 @@ function ListPage({user,setPage,setDid,announcements,dataSource,matchedOnly=fals
               <div className="divider" style={{margin:'11px 0'}}/>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-                  {a.houseTypes.map(h=><span key={h.t} className="tag">{h.t} ({h.area}㎡)</span>)}
+                  {a.houseTypes.map(h=><span key={h.t} className="tag">{h.t} ({h.exclArea||h.area}㎡)</span>)}
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:10}}>
                   <span style={{fontSize:11,color:'var(--dust3)',display:'flex',alignItems:'center',gap:3}}><ICal c={10}/>접수 {a.schedule.general}</span>
@@ -1349,7 +1349,7 @@ function DetailPage({annId,user,apiKey,setPage,announcements}){
             {a.houseTypes.map(h=>(
               <div key={h.t} style={{padding:'13px',background:'var(--ink3)',borderRadius:10,border:'1px solid var(--line)',marginBottom:8}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div><span style={{fontWeight:700,fontSize:14,marginRight:8}}>{h.t}타입</span><span style={{color:'var(--dust2)',fontSize:12}}>전용 {h.area}㎡ · 총 {h.units}세대</span></div>
+                  <div><span style={{fontWeight:700,fontSize:14,marginRight:8}}>{h.t}타입</span><span style={{color:'var(--dust2)',fontSize:12}}>전용 {h.exclArea||h.area}㎡ · 공급 {h.exclArea?h.area:'-'}㎡ · {h.units>0?`${h.units}세대`:'세대수 공고 확인'}</span></div>
                   <div style={{fontSize:15,fontWeight:700,color:'var(--jade)'}}>{fmtN(h.price)}만원</div>
                 </div>
               </div>

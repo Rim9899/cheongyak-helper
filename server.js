@@ -169,19 +169,67 @@ function transformItem(f) {
 }
 
 /* ═══════════════════════════════════════════════
-   청약홈 API 호출
+   주택형별 분양가 조회 (getAPTLttotPblancMdl)
+   HOUSE_TY 예: "055.8600A" → 전용 55.86㎡ A형
+   LTTOT_TOP_AMOUNT: 분양가 최고금액 (만원)
 ═══════════════════════════════════════════════ */
-async function fetchFromAPI(apiKey) {
-  // 3페이지(300건) 병렬 수집 후 서버에서 날짜 필터링
-  const pages = [1, 2, 3];
+function parseHouseTy(raw) {
+  const s = String(raw || '');
+  const m = s.match(/^0*(\d+\.\d+)([A-Za-z]*)$/);
+  if (m) {
+    const area = parseFloat(m[1]);
+    const letter = m[2].toUpperCase();
+    return { area, name: `${Math.floor(area)}${letter}형` };
+  }
+  return { area: 0, name: s };
+}
+
+async function fetchHouseTypes(apiKey) {
+  // 5페이지(500건) 병렬 수집 → 최근 공고의 주택형 대부분 커버
+  const pages = [1, 2, 3, 4, 5];
   const responses = await Promise.all(
     pages.map(page =>
-      axios.get(`${APT_API_BASE}/getAPTLttotPblancDetail`, {
+      axios.get(`${APT_API_BASE}/getAPTLttotPblancMdl`, {
         params: { serviceKey: apiKey, page, perPage: 100 },
         timeout: 15000,
       }).then(r => r.data?.data || []).catch(() => [])
     )
   );
+
+  const map = {};
+  for (const f of responses.flat()) {
+    const key = f.PBLANC_NO || f.HOUSE_MANAGE_NO;
+    if (!key) continue;
+    if (!map[key]) map[key] = [];
+    const { area, name } = parseHouseTy(f.HOUSE_TY);
+    map[key].push({
+      t:     name,
+      area:  toFloat(f.SUPLY_AR),   // 공급면적(㎡)
+      exclArea: area,               // 전용면적(㎡)
+      price: toInt(f.LTTOT_TOP_AMOUNT),
+      units: toInt(f.SPSPLY_HSHLDCO) + toInt(f.SUPLY_HSHLDCO),
+    });
+  }
+  console.log(`[주택형] ${Object.keys(map).length}개 공고 주택형 수집`);
+  return map;
+}
+
+/* ═══════════════════════════════════════════════
+   청약홈 API 호출
+═══════════════════════════════════════════════ */
+async function fetchFromAPI(apiKey) {
+  // 공고 목록 + 주택형 병렬 수집
+  const [responses, houseTypeMap] = await Promise.all([
+    Promise.all(
+      [1, 2, 3].map(page =>
+        axios.get(`${APT_API_BASE}/getAPTLttotPblancDetail`, {
+          params: { serviceKey: apiKey, page, perPage: 100 },
+          timeout: 15000,
+        }).then(r => r.data?.data || []).catch(() => [])
+      )
+    ),
+    fetchHouseTypes(apiKey).catch(() => ({})),
+  ]);
 
   const allItems = responses.flat();
   if (!allItems.length) {
@@ -202,11 +250,17 @@ async function fetchFromAPI(apiKey) {
   });
 
   const result = (filtered.length ? filtered : allItems.slice(0, 100))
-    .map(transformItem)
+    .map(f => {
+      const item = transformItem(f);
+      const key = f.PBLANC_NO || f.HOUSE_MANAGE_NO;
+      if (key && houseTypeMap[key]) item.houseTypes = houseTypeMap[key];
+      return item;
+    })
     .filter(Boolean)
     .sort((a, b) => (b.schedule.announcement || '').localeCompare(a.schedule.announcement || ''));
 
-  console.log(`[API] 전체 ${allItems.length}건 수집 → 필터 후 ${result.length}건`);
+  const withTypes = result.filter(r => r.houseTypes.length > 0).length;
+  console.log(`[API] 전체 ${allItems.length}건 수집 → 필터 후 ${result.length}건 (주택형 연동: ${withTypes}건)`);
   return result;
 }
 
