@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cheongyak-v1';
+const CACHE_NAME = 'cheongyak-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
